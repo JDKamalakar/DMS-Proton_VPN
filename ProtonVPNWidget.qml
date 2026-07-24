@@ -119,6 +119,11 @@ PluginComponent {
         return c;
     }
 
+    function toTitleCase(str) {
+        if (!str) return "";
+        return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+    }
+
     // --- Scanners & Process Execution ---
     Process {
         id: statusScanner
@@ -277,12 +282,14 @@ PluginComponent {
                 
                 let newCountriesList = [];
                 for (let code in parsedByCountry) {
+                    let srvList = parsedByCountry[code];
+                    srvList.sort((a, b) => (parseInt(a.load, 10) || 0) - (parseInt(b.load, 10) || 0));
                     newCountriesList.push({
                         name: root.getCountryName(code),
                         code: code,
                         flag: root.getCountryFlag(code),
                         target: code,
-                        servers: parsedByCountry[code]
+                        servers: srvList
                     });
                 }
                 
@@ -408,11 +415,20 @@ PluginComponent {
                     
                     Component {
                         id: standardPillIconH
-                        DankIcon {
-                            name: root.vpnStatus === "Connected" ? "vpn_key" : "vpn_key_off"
-                            size: Theme.iconSize - 4
-                            color: root.vpnStatus === "Connected" ? Theme.primary : (Theme.widgetIconColor || Theme.surfaceText)
-                            anchors.centerIn: parent
+                        Item {
+                            anchors.fill: parent
+                            Image {
+                                id: pillMonoImgH
+                                source: Qt.resolvedUrl("assets/icons/Proton-VPN_Mono.svg")
+                                anchors.fill: parent
+                                smooth: true
+                            }
+                            MultiEffect {
+                                anchors.fill: pillMonoImgH
+                                source: pillMonoImgH
+                                colorization: 1.0
+                                colorizationColor: root.vpnStatus === "Connected" ? Theme.primary : (Theme.isDarkMode ? "#ffffff" : "#000000")
+                            }
                         }
                     }
                 }
@@ -442,11 +458,20 @@ PluginComponent {
                 
                 Component {
                     id: standardPillIconV
-                    DankIcon {
-                        name: root.vpnStatus === "Connected" ? "vpn_key" : "vpn_key_off"
-                        size: 18
-                        color: root.vpnStatus === "Connected" ? Theme.primary : (Theme.widgetIconColor || Theme.surfaceText)
-                        anchors.centerIn: parent
+                    Item {
+                        anchors.fill: parent
+                        Image {
+                            id: pillMonoImgV
+                            source: Qt.resolvedUrl("assets/icons/Proton-VPN_Mono.svg")
+                            anchors.fill: parent
+                            smooth: true
+                        }
+                        MultiEffect {
+                            anchors.fill: pillMonoImgV
+                            source: pillMonoImgV
+                            colorization: 1.0
+                            colorizationColor: root.vpnStatus === "Connected" ? Theme.primary : (Theme.isDarkMode ? "#ffffff" : "#000000")
+                        }
                     }
                 }
             }
@@ -477,20 +502,29 @@ PluginComponent {
         RowLayout {
             spacing: Theme.spacingXS
             Item {
+                id: svgContainer
                 width: 16; height: 16
                 visible: typeof sectionSvg !== "undefined" && sectionSvg !== ""
                 Layout.alignment: Qt.AlignVCenter
                 Image {
+                    id: headerSvgImg
                     source: (typeof sectionSvg !== "undefined" && sectionSvg !== "") ? Qt.resolvedUrl(sectionSvg) : ""
                     anchors.fill: parent
                     sourceSize.width: 16; sourceSize.height: 16
                     smooth: true
                 }
+                MultiEffect {
+                    anchors.fill: headerSvgImg
+                    source: headerSvgImg
+                    colorization: 1.0
+                    colorizationColor: Theme.surfaceText
+                }
             }
             DankIcon {
                 name: typeof sectionIcon !== "undefined" ? sectionIcon : "info"
                 size: 16
-                color: Theme.primary
+                // FIX: Use theme surface text color here as well
+                color: Theme.surfaceText
                 visible: typeof sectionSvg === "undefined" || sectionSvg === ""
             }
             StyledText { text: sectionTitle; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.surfaceText; Layout.fillWidth: true }
@@ -510,146 +544,148 @@ PluginComponent {
 
             // 1. Header Card
             StyledRect {
-                width: parent.width; anchors.horizontalCenter: parent.horizontalCenter; height: 84
+                width: Math.max(0, parent.width - (mainCol.inCC ? 32 : 0)); anchors.horizontalCenter: parent.horizontalCenter; height: 72
                 radius: Theme.cornerRadius
                 color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
                 border.width: 1
-                border.color: root.vpnStatus === "Connected" ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.4) : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
 
                 RowLayout {
-                    anchors.fill: parent; anchors.margins: Theme.spacingM; spacing: Theme.spacingM
-                    
+                    anchors.fill: parent; anchors.margins: Theme.spacingM;
                     Rectangle {
-                        width: 48; height: 48; radius: 10
-                        color: root.vpnStatus === "Connected" ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.6)
-                        border.color: root.vpnStatus === "Connected" ? Theme.primary : Qt.rgba(Theme.surfaceText.r, Theme.surfaceText.g, Theme.surfaceText.b, 0.15)
+                        width: 42; height: 42; radius: 21
+                        color: root.vpnStatus === "Connected" ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.4)
+                        border.color: root.vpnStatus === "Connected" ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.4) : Qt.rgba(Theme.surfaceText.r, Theme.surfaceText.g, Theme.surfaceText.b, 0.15)
                         border.width: 1
 
                         Item {
                             anchors.fill: parent
-                            DankIcon {
-                                name: (root.isConnecting || root.isDisconnecting) ? "cached" : (root.vpnStatus === "Connected" ? "vpn_key" : "vpn_key_off")
-                                size: 24
-                                color: (root.vpnStatus === "Connected" || root.isConnecting || root.isDisconnecting) ? Theme.primary : Theme.surfaceText
+                            Image {
+                                source: Qt.resolvedUrl("assets/icons/Proton-VPN.svg")
+                                width: 26; height: 26
                                 anchors.centerIn: parent
+                                anchors.horizontalCenterOffset: -1
+                                anchors.verticalCenterOffset: -1
+                                fillMode: Image.PreserveAspectFit
+                                sourceSize.width: 26; sourceSize.height: 26
+                                smooth: true
                                 visible: !(root.vpnStatus === "Connected" && root.connectedCountry)
-                                RotationAnimation on rotation {
-                                    from: 0; to: 360; duration: 1000; loops: Animation.Infinite; running: root.isConnecting || root.isDisconnecting
-                                    onRunningChanged: { if (!running) rotation = 0; }
-                                }
                             }
-                            StyledText {
+                            Text {
                                 text: (root.vpnStatus === "Connected" && root.connectedCountry) ? root.getCountryFlag(root.connectedCountry) : ""
-                                font.pixelSize: 30
+                                font.pixelSize: 26
+                                font.family: "Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, EmojiOne Color, Twemoji, sans-serif"
+                                color: Theme.surfaceText
                                 anchors.centerIn: parent
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
                                 visible: text !== ""
                             }
                         }
                     }
 
                     Column {
-                        Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; spacing: 2
+                        Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; spacing: 0
                         StyledText { 
                             text: "Proton VPN"
                             font.bold: true; font.pixelSize: Theme.fontSizeLarge; color: Theme.surfaceText 
+                            elide: Text.ElideRight
                         }
                         
-                        RowLayout {
-                            spacing: 4
-                            visible: root.isConnecting || root.isDisconnecting
-                            DankIcon {
-                                name: "cached"
-                                size: 12
-                                color: Theme.primary
-                                RotationAnimation on rotation { 
-                                    from: 0; to: 360; duration: 800; loops: Animation.Infinite; running: root.isConnecting || root.isDisconnecting
-                                    onRunningChanged: { if (!running) rotation = 0; }
-                                }
-                            }
-                            StyledText {
-                                text: root.isConnecting ? "Connecting..." : "Disconnecting..."
-                                font.pixelSize: Theme.fontSizeSmall - 1
-                                font.weight: Font.Bold
-                                color: Theme.primary
-                            }
-                        }
-
-                        Item {
-                            width: statusText.implicitWidth; height: statusText.implicitHeight; clip: true
-                            visible: !root.isConnecting && !root.isDisconnecting
-                            StyledText { 
-                                id: statusText
-                                font.pixelSize: Theme.fontSizeSmall - 1
-                                color: root.vpnStatus === "Connected" ? Theme.primary : Theme.surfaceVariantText
-                                elide: Text.ElideRight
-                                property string targetText: root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : "Disconnected"
-                                Component.onCompleted: text = targetText
-                                onTargetTextChanged: { if (text !== targetText) flipAnim.restart(); }
-                                SequentialAnimation {
-                                    id: flipAnim
-                                    ParallelAnimation {
-                                        NumberAnimation { target: statusText; property: "opacity"; to: 0; duration: 75 }
-                                        NumberAnimation { target: statusText; property: "y"; to: 8; duration: 75; easing.type: Easing.InQuad }
-                                    }
-                                    PropertyAction { target: statusText; property: "text"; value: statusText.targetText }
-                                    ParallelAnimation {
-                                        NumberAnimation { target: statusText; property: "opacity"; to: 1.0; duration: 75 }
-                                        NumberAnimation { target: statusText; property: "y"; to: 0; duration: 75; easing.type: Easing.OutQuad }
-                                    }
-                                }
-                            }
+                        StyledText { 
+                            id: statusLabelText
+                            Layout.fillWidth: true
+                            text: root.isConnecting ? "Connecting..." : (root.isDisconnecting ? "Disconnecting..." : (root.vpnStatus === "Connected" ? (root.connectedCountryName || root.connectedServer || "Connected") : "Disconnected"))
+                            font.pixelSize: Theme.fontSizeSmall - 1
+                            color: root.vpnStatus === "Connected" ? Theme.primary : Theme.surfaceVariantText
+                            font.family: "Monospace"
+                            opacity: 0.8
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
                         }
                     }
 
-                    Rectangle {
-                        id: headerActionBtn
-                        width: 106; height: 42; radius: Theme.cornerRadius
-                        color: root.vpnStatus === "Connected" ? Theme.error : Theme.primary
-                        opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
-                        scale: maHeaderBtn.pressed ? 0.95 : (maHeaderBtn.containsMouse ? 1.03 : 1.0)
-                        Behavior on color { ColorAnimation { duration: 150 } }
-                        Behavior on opacity { NumberAnimation { duration: 150 } }
-                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                    Item {
+                        id: headerActionBtnContainer
+                        width: 106; height: 38
+                        Layout.alignment: Qt.AlignVCenter
 
-                        DankRipple {
-                            id: headerBtnRipple
-                            anchors.fill: parent
-                            cornerRadius: Theme.cornerRadius
-                            rippleColor: Theme.surface
-                        }
+                        Item {
+                            id: morphingBtn
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: (root.isConnecting || root.isDisconnecting) ? 38 : 106
+                            height: 38
 
-                        RowLayout {
-                            anchors.centerIn: parent; spacing: 6
-                            DankIcon {
-                                id: connBtnIcon
-                                name: (root.isConnecting || root.isDisconnecting) ? "cached" : (root.vpnStatus === "Connected" ? "power_settings_new" : "link")
-                                size: 18
-                                color: Theme.surface
-                                RotationAnimation on rotation {
-                                    from: 0; to: 360; duration: 1000; loops: Animation.Infinite; running: root.isConnecting || root.isDisconnecting
-                                    onRunningChanged: { if (!running) rotation = 0; }
+                            Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutQuad } }
+                            scale: maHeaderBtn.pressed ? 0.92 : (maHeaderBtn.containsMouse ? 1.05 : 1.0)
+                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+
+                            Rectangle {
+                                id: headerActionBg
+                                anchors.fill: parent
+                                radius: (root.isConnecting || root.isDisconnecting) ? 19 : Theme.cornerRadius
+                                Behavior on radius { NumberAnimation { duration: 250; easing.type: Easing.OutQuad } }
+
+                                color: maHeaderBtn.containsMouse 
+                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) 
+                                    : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.4)
+                                border.width: 1
+                                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, maHeaderBtn.containsMouse ? 0.3 : 0.15)
+
+                                Behavior on color { ColorAnimation { duration: 150 } }
+                                Behavior on border.color { ColorAnimation { duration: 150 } }
+                            }
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: (root.isConnecting || root.isDisconnecting) ? 0 : 6
+
+                                DankIcon {
+                                    id: connBtnIcon
+                                    name: (root.isConnecting || root.isDisconnecting) ? "cached" : (root.vpnStatus === "Connected" ? "link_off" : "link")
+                                    size: (root.isConnecting || root.isDisconnecting) ? 20 : 18
+                                    color: Theme.primary
+                                    Layout.alignment: Qt.AlignVCenter
+
+                                    RotationAnimation on rotation {
+                                        from: 0; to: 360; duration: 1000; loops: Animation.Infinite; running: root.isConnecting || root.isDisconnecting
+                                        onRunningChanged: { if (!running) rotation = 0; }
+                                    }
+                                }
+
+                                StyledText {
+                                    text: root.vpnStatus === "Connected" ? "Disconnect" : "Connect"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    font.weight: Font.Normal
+                                    color: Theme.primary
+                                    visible: opacity > 0
+                                    opacity: (root.isConnecting || root.isDisconnecting) ? 0.0 : 1.0
+                                    Behavior on opacity { NumberAnimation { duration: 150 } }
+                                    Layout.alignment: Qt.AlignVCenter
                                 }
                             }
-                            StyledText {
-                                text: root.isConnecting ? "Connecting" : (root.isDisconnecting ? "Disconnecting" : (root.vpnStatus === "Connected" ? "Disconnect" : "Connect"))
-                                font.pixelSize: Theme.fontSizeSmall
-                                font.weight: Font.Bold
-                                color: Theme.surface
-                            }
-                        }
 
-                        MouseArea {
-                            id: maHeaderBtn
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            enabled: !root.isConnecting && !root.isDisconnecting
-                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onPressed: mouse => headerBtnRipple.trigger(mouse.x, mouse.y)
-                            onClicked: {
-                                if (root.vpnStatus === "Connected") {
-                                    root.disconnectVpn();
-                                } else {
-                                    root.connectVpn(root._defaultConnectTarget);
+                            DankRipple {
+                                id: headerBtnRipple
+                                anchors.fill: parent
+                                cornerRadius: headerActionBg.radius
+                                rippleColor: Theme.primary
+                            }
+
+                            MouseArea {
+                                id: maHeaderBtn
+                                anchors.fill: parent
+                                hoverEnabled: !root.isConnecting && !root.isDisconnecting
+                                enabled: !root.isConnecting && !root.isDisconnecting
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onPressed: mouse => headerBtnRipple.trigger(mouse.x, mouse.y)
+                                onClicked: {
+                                    if (root.vpnStatus === "Connected") {
+                                        root.disconnectVpn();
+                                    } else {
+                                        root.connectVpn(root._defaultConnectTarget);
+                                    }
                                 }
                             }
                         }
@@ -673,14 +709,14 @@ PluginComponent {
                         width: parent.width
                         asynchronous: true
                         property string sectionIcon: "info"
-                        property string sectionTitle: "Connection Details"
+                        property string sectionTitle: "Details"
                         sourceComponent: sectionHeaderComponent
                     }
 
                     Column {
                         id: connDetailsListCol
                         width: parent.width
-                        spacing: 2
+                        spacing: 4
 
                         Item {
                             id: srvDetailItem
@@ -711,9 +747,10 @@ PluginComponent {
 
                             RowLayout {
                                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
-                                DankIcon { name: "dns"; size: 16; color: Theme.primary }
-                                StyledText { text: "Server"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Medium; color: Theme.surfaceVariantText; Layout.fillWidth: true }
-                                StyledText { text: root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : "Disconnected"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.surfaceText }
+                                DankIcon { name: "dns"; size: 16; color: Theme.surfaceText; opacity: 0.7 }
+                                StyledText { text: "Server"; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceText }
+                                Item { Layout.fillWidth: true }
+                                StyledText { text: root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : "Disconnected"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: root.vpnStatus === "Connected" ? Theme.primary : Theme.surfaceVariantText }
                             }
                         }
 
@@ -746,11 +783,12 @@ PluginComponent {
 
                             RowLayout {
                                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
-                                DankIcon { name: "public"; size: 16; color: Theme.primary }
-                                StyledText { text: "Region"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Medium; color: Theme.surfaceVariantText; Layout.fillWidth: true }
+                                DankIcon { name: "public"; size: 16; color: Theme.surfaceText; opacity: 0.7 }
+                                StyledText { text: "Region"; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceText }
+                                Item { Layout.fillWidth: true }
                                 StyledText { 
                                     text: root.vpnStatus === "Connected" ? (root.connectedCountryName || root.getCountryName(root.connectedCountry) || "Global") : "Not Connected"
-                                    font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.surfaceText
+                                    font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: root.vpnStatus === "Connected" ? Theme.primary : Theme.surfaceVariantText
                                     elide: Text.ElideRight
                                 }
                             }
@@ -785,12 +823,12 @@ PluginComponent {
 
                             RowLayout {
                                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
-                                DankIcon { name: "security"; size: 16; color: Theme.primary }
-                                StyledText { text: "Protocol"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Medium; color: Theme.surfaceVariantText; Layout.fillWidth: true }
+                                DankIcon { name: "security"; size: 16; color: Theme.surfaceText; opacity: 0.7 }
+                                StyledText { text: "Protocol"; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceText }
+                                Item { Layout.fillWidth: true }
                                 StyledText { 
-                                    text: (root.connectedProtocol || root._defaultProtocol || "smart").toUpperCase()
-                                    font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.primary
-                                    font.family: "Monospace"
+                                    text: root.toTitleCase(root.connectedProtocol || root._defaultProtocol || "smart")
+                                    font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: Theme.primary
                                 }
                             }
                         }
@@ -821,21 +859,58 @@ PluginComponent {
                         sourceComponent: sectionHeaderComponent
                     }
 
-                    Rectangle {
+                    Item {
                         id: quickConnBtn
-                        width: parent.width; height: 44; radius: Theme.cornerRadius
-                        color: maQuickConn.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
-                        border.color: Theme.primary; border.width: 1
+                        width: parent.width; height: 44
                         opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
                         scale: maQuickConn.pressed ? 0.98 : (maQuickConn.containsMouse ? 1.01 : 1.0)
-                        Behavior on color { ColorAnimation { duration: 150 } }
                         Behavior on opacity { NumberAnimation { duration: 150 } }
                         Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+
+                        Shape {
+                            id: quickConnBg
+                            anchors.fill: parent
+
+                            property real outerRadius: 12
+                            property real tlr: maQuickConn.containsMouse ? (height / 2) : outerRadius
+                            property real trr: maQuickConn.containsMouse ? (height / 2) : outerRadius
+                            property real blr: maQuickConn.containsMouse ? (height / 2) : outerRadius
+                            property real brr: maQuickConn.containsMouse ? (height / 2) : outerRadius
+
+                            property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                            property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                            property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                            property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+
+                            property color paintColor: maQuickConn.containsMouse 
+                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) 
+                                    : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
+                            property color paintBorder: Theme.primary
+
+                            Behavior on paintColor { ColorAnimation { duration: 150 } }
+
+                            ShapePath {
+                                fillColor: quickConnBg.paintColor
+                                strokeColor: quickConnBg.paintBorder
+                                strokeWidth: 1
+
+                                startX: quickConnBg.tlrAnim; startY: 0
+                                PathLine { x: quickConnBg.width - quickConnBg.trrAnim; y: 0 }
+                                PathArc { x: quickConnBg.width; y: quickConnBg.trrAnim; radiusX: quickConnBg.trrAnim; radiusY: quickConnBg.trrAnim; direction: PathArc.Clockwise }
+                                PathLine { x: quickConnBg.width; y: quickConnBg.height - quickConnBg.brrAnim }
+                                PathArc { x: quickConnBg.width - quickConnBg.brrAnim; y: quickConnBg.height; radiusX: quickConnBg.brrAnim; radiusY: quickConnBg.brrAnim; direction: PathArc.Clockwise }
+                                PathLine { x: quickConnBg.blrAnim; y: quickConnBg.height }
+                                PathArc { x: 0; y: quickConnBg.height - quickConnBg.blrAnim; radiusX: quickConnBg.blrAnim; radiusY: quickConnBg.blrAnim; direction: PathArc.Clockwise }
+                                PathLine { x: 0; y: quickConnBg.tlrAnim }
+                                PathArc { x: quickConnBg.tlrAnim; y: 0; radiusX: quickConnBg.tlrAnim; radiusY: quickConnBg.tlrAnim; direction: PathArc.Clockwise }
+                            }
+                        }
 
                         DankRipple {
                             id: quickConnRipple
                             anchors.fill: parent
-                            cornerRadius: Theme.cornerRadius
+                            clip: true
+                            cornerRadius: quickConnBg.tlrAnim
                             rippleColor: Theme.primary
                         }
 
@@ -851,85 +926,90 @@ PluginComponent {
 
                         RowLayout {
                             anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
-                            DankIcon { name: "bolt"; size: 18; color: Theme.primary; Layout.alignment: Qt.AlignVCenter }
+                            DankIcon { name: "bolt"; size: 18; color: Theme.isDarkMode ? "#ffffff" : "#000000"; Layout.alignment: Qt.AlignVCenter }
                             StyledText { text: "Quick Connect (Fastest)"; Layout.fillWidth: true; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.primary }
                         }
                     }
 
                     Column {
-                        id: countriesListCol; width: parent.width; spacing: 2
+                        id: countriesListCol; width: parent.width; spacing: 4
 
                         Repeater {
                             model: root.countriesList
-                            delegate: Column {
+                            delegate: Item {
+                                id: countryDelegateCard
                                 width: countriesListCol.width
                                 property bool isExpanded: root.expandedCountryCode === modelData.code
-                                spacing: isExpanded ? 2 : 0
+                                height: 42 + (isExpanded ? (expContainer.height + 12) : 0)
+                                Behavior on height { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                                opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
+                                scale: maCountryHeader.pressed ? 0.98 : (maCountryHeader.containsMouse ? 1.005 : 1.0)
+                                Behavior on opacity { NumberAnimation { duration: 150 } }
+                                Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+
+                                Shape {
+                                    id: countryBg
+                                    anchors.fill: parent
+
+                                    property real innerRadius: 6
+                                    property real outerRadius: 12
+                                    property bool isFirstRow: index === 0
+                                    property bool isLastRow: index === root.countriesList.length - 1
+                                    
+                                    property real tlr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isFirstRow ? outerRadius : innerRadius)
+                                    property real trr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isFirstRow ? outerRadius : innerRadius)
+                                    property real blr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isLastRow ? outerRadius : innerRadius)
+                                    property real brr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isLastRow ? outerRadius : innerRadius)
+
+                                    property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                    property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                    property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                    property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+
+                                    property color paintColor: isExpanded 
+                                            ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.12) 
+                                            : (maCountryHeader.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.08) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04))
+                                    
+                                    property color paintBorder: isExpanded 
+                                            ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.50) 
+                                            : (maCountryHeader.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.35) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15))
+
+                                    Behavior on paintColor { ColorAnimation { duration: 150 } }
+                                    Behavior on paintBorder { ColorAnimation { duration: 150 } }
+
+                                    ShapePath {
+                                        fillColor: countryBg.paintColor
+                                        strokeColor: countryBg.paintBorder
+                                        strokeWidth: 1
+                                        
+                                        startX: countryBg.tlrAnim; startY: 0
+                                        PathLine { x: countryBg.width - countryBg.trrAnim; y: 0 }
+                                        PathArc { x: countryBg.width; y: countryBg.trrAnim; radiusX: countryBg.trrAnim; radiusY: countryBg.trrAnim; direction: PathArc.Clockwise }
+                                        PathLine { x: countryBg.width; y: countryBg.height - countryBg.brrAnim }
+                                        PathArc { x: countryBg.width - countryBg.brrAnim; y: countryBg.height; radiusX: countryBg.brrAnim; radiusY: countryBg.brrAnim; direction: PathArc.Clockwise }
+                                        PathLine { x: countryBg.blrAnim; y: countryBg.height }
+                                        PathArc { x: 0; y: countryBg.height - countryBg.blrAnim; radiusX: countryBg.blrAnim; radiusY: countryBg.blrAnim; direction: PathArc.Clockwise }
+                                        PathLine { x: 0; y: countryBg.tlrAnim }
+                                        PathArc { x: countryBg.tlrAnim; y: 0; radiusX: countryBg.tlrAnim; radiusY: countryBg.tlrAnim; direction: PathArc.Clockwise }
+                                    }
+                                }
+
+                                DankRipple {
+                                    id: countryRipple
+                                    anchors.fill: parent
+                                    clip: true
+                                    cornerRadius: countryBg.tlrAnim
+                                    rippleColor: Theme.primary
+                                }
 
                                 Item {
-                                    id: countryItemWrap
+                                    id: countryHeaderArea
                                     width: parent.width; height: 42
-                                    opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
-                                    scale: maCountry.pressed ? 0.98 : (maCountry.containsMouse ? 1.01 : 1.0)
-                                    Behavior on opacity { NumberAnimation { duration: 150 } }
-                                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
-
-                                    Shape {
-                                        id: countryBg
-                                        anchors.fill: parent
-
-                                        property real innerRadius: 6
-                                        property real outerRadius: 12
-                                        property bool isFirstRow: index === 0
-                                        property bool isLastRow: index === root.countriesList.length - 1
-                                        
-                                        property real tlr: (isExpanded || maCountry.containsMouse) ? (height / 2) : (isFirstRow ? outerRadius : innerRadius)
-                                        property real trr: (isExpanded || maCountry.containsMouse) ? (height / 2) : (isFirstRow ? outerRadius : innerRadius)
-                                        property real blr: (isExpanded || maCountry.containsMouse) ? (height / 2) : (isLastRow ? outerRadius : innerRadius)
-                                        property real brr: (isExpanded || maCountry.containsMouse) ? (height / 2) : (isLastRow ? outerRadius : innerRadius)
-
-                                        property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                        property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                        property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                        property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-
-                                        property color paintColor: isExpanded 
-                                                ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18) 
-                                                : (maCountry.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04))
-                                        
-                                        property color paintBorder: isExpanded 
-                                                ? Theme.primary 
-                                                : (maCountry.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.40) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15))
-
-                                        Behavior on paintColor { ColorAnimation { duration: 150 } }
-                                        Behavior on paintBorder { ColorAnimation { duration: 150 } }
-
-                                        ShapePath {
-                                            fillColor: countryBg.paintColor
-                                            strokeColor: countryBg.paintBorder
-                                            strokeWidth: 1
-                                            
-                                            startX: countryBg.tlrAnim; startY: 0
-                                            PathLine { x: countryBg.width - countryBg.trrAnim; y: 0 }
-                                            PathArc { x: countryBg.width; y: countryBg.trrAnim; radiusX: countryBg.trrAnim; radiusY: countryBg.trrAnim; direction: PathArc.Clockwise }
-                                            PathLine { x: countryBg.width; y: countryBg.height - countryBg.brrAnim }
-                                            PathArc { x: countryBg.width - countryBg.brrAnim; y: countryBg.height; radiusX: countryBg.brrAnim; radiusY: countryBg.brrAnim; direction: PathArc.Clockwise }
-                                            PathLine { x: countryBg.blrAnim; y: countryBg.height }
-                                            PathArc { x: 0; y: countryBg.height - countryBg.blrAnim; radiusX: countryBg.blrAnim; radiusY: countryBg.blrAnim; direction: PathArc.Clockwise }
-                                            PathLine { x: 0; y: countryBg.tlrAnim }
-                                            PathArc { x: countryBg.tlrAnim; y: 0; radiusX: countryBg.tlrAnim; radiusY: countryBg.tlrAnim; direction: PathArc.Clockwise }
-                                        }
-                                    }
-
-                                    DankRipple {
-                                        id: countryRipple
-                                        anchors.fill: parent
-                                        cornerRadius: countryBg.tlrAnim
-                                        rippleColor: Theme.primary
-                                    }
+                                    anchors.top: parent.top
 
                                     MouseArea {
-                                        id: maCountry; anchors.fill: parent; hoverEnabled: true
+                                        id: maCountryHeader; anchors.fill: parent; hoverEnabled: true
                                         enabled: !root.isConnecting && !root.isDisconnecting
                                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                         onPressed: mouse => countryRipple.trigger(mouse.x, mouse.y)
@@ -948,10 +1028,14 @@ PluginComponent {
                                         Item {
                                             width: 24; height: 24
                                             Layout.alignment: Qt.AlignVCenter
-                                            StyledText {
+                                            Text {
                                                 text: modelData.flag
-                                                font.pixelSize: 22
+                                                font.pixelSize: 18
+                                                font.family: "Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, EmojiOne Color, Twemoji, sans-serif"
+                                                color: Theme.surfaceText
                                                 anchors.centerIn: parent
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
                                             }
                                         }
 
@@ -970,31 +1054,37 @@ PluginComponent {
 
                                 Item {
                                     id: expContainer
-                                    width: parent.width
+                                    anchors.top: countryHeaderArea.bottom
+                                    anchors.left: parent.left; anchors.right: parent.right
+                                    anchors.leftMargin: 6; anchors.rightMargin: 6; anchors.bottomMargin: 6
                                     height: isExpanded ? Math.min(serverSubCol.implicitHeight, 184) : 0
                                     clip: true
-                                    Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                                    Behavior on height { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on opacity { NumberAnimation { duration: 150 } }
                                     opacity: isExpanded ? 1.0 : 0.0
 
                                     Flickable {
+                                        id: serverFlickable
                                         anchors.fill: parent
-                                        contentWidth: expContainer.width
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 14
+                                        contentWidth: width
                                         contentHeight: serverSubCol.implicitHeight
                                         boundsBehavior: Flickable.StopAtBounds
                                         clip: true
 
                                         Column {
                                             id: serverSubCol
-                                            width: expContainer.width
-                                            spacing: 2
-                                            padding: 2
+                                            width: parent.width
+                                            spacing: 4
+                                            topPadding: 4
+                                            bottomPadding: 4
 
                                             Item {
                                                 id: fastestServerItem
                                                 width: parent.width; height: 38
                                                 opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
-                                                scale: maFastestServer.pressed ? 0.98 : (maFastestServer.containsMouse ? 1.01 : 1.0)
+                                                scale: maFastestServer.pressed ? 0.98 : 1.0
                                                 Behavior on opacity { NumberAnimation { duration: 150 } }
                                                 Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
@@ -1063,7 +1153,7 @@ PluginComponent {
                                                     id: serverItemRect
                                                     width: parent.width; height: 34
                                                     opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
-                                                    scale: maSrv.pressed ? 0.98 : (maSrv.containsMouse ? 1.01 : 1.0)
+                                                    scale: maSrv.pressed ? 0.98 : 1.0
                                                     Behavior on opacity { NumberAnimation { duration: 150 } }
                                                     Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
@@ -1126,6 +1216,28 @@ PluginComponent {
                                                     }
                                                 }
                                             }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        id: srvScrollBar
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 1
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 4
+                                        anchors.bottom: parent.bottom
+                                        anchors.bottomMargin: 4
+                                        width: 3
+                                        radius: 1.5
+                                        color: Qt.rgba(Theme.surfaceText.r, Theme.surfaceText.g, Theme.surfaceText.b, 0.12)
+                                        visible: serverFlickable.contentHeight > serverFlickable.height
+
+                                        Rectangle {
+                                            width: parent.width
+                                            height: Math.max(16, (serverFlickable.visibleArea.heightRatio) * parent.height)
+                                            y: serverFlickable.visibleArea.yPosition * parent.height
+                                            radius: 1.5
+                                            color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.6)
                                         }
                                     }
                                 }
