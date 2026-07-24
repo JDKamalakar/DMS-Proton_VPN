@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls
 import Quickshell
 import qs.Common
 import qs.Widgets
@@ -10,30 +11,32 @@ PluginSettings {
     id: root
     pluginId: "protonVPN"
 
+    // --- Settings State on Root ---
+    property string defaultProtocol: "smart"
+    property string defaultConnectTarget: "fastest"
+    property bool paidServersOnly: false
+
+    function loadValue(key, def) {
+        return PluginService.loadPluginData(root.pluginId, key, def);
+    }
+
+    function saveValue(key, val) {
+        PluginService.savePluginData(root.pluginId, key, val);
+        PluginService.setGlobalVar(root.pluginId, key, val);
+    }
+
+    function loadAll() {
+        defaultProtocol = loadValue("defaultProtocol", "smart");
+        defaultConnectTarget = loadValue("defaultConnectTarget", "fastest");
+        paidServersOnly = loadValue("paidServersOnly", false);
+    }
+
+    Component.onCompleted: loadAll()
+
     Column {
         id: mainSettingsCol
         width: parent.width
         spacing: Theme.spacingL
-
-        function loadValue(key, def) {
-            return PluginService.loadPluginData(root.pluginId, key, def);
-        }
-
-        function saveValue(key, val) {
-            PluginService.savePluginData(root.pluginId, key, val);
-            PluginService.setGlobalVar(root.pluginId, key, val);
-        }
-
-        // --- Settings State ---
-        property string defaultProtocol: "smart"
-        property string defaultConnectTarget: "fastest"
-
-        function loadAll() {
-            defaultProtocol = loadValue("defaultProtocol", "smart");
-            defaultConnectTarget = loadValue("defaultConnectTarget", "fastest");
-        }
-
-        Component.onCompleted: loadAll()
 
         // --- Proton VPN Connection Protocol Section ---
         Rectangle {
@@ -69,7 +72,7 @@ PluginSettings {
                         Layout.alignment: Qt.AlignVCenter
                         spacing: Theme.spacingXS
                         StyledText { text: "Connection Protocol"; font.weight: Font.Medium; color: Theme.surfaceText }
-                        StyledText { text: "Select preferred backend protocol passed directly via --protocol flag to pvpnctl."; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceVariantText; width: parent.width; wrapMode: Text.WordWrap }
+                        StyledText { text: "Select preferred backend protocol. This is passed directly via --protocol flag on connect."; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceVariantText; width: parent.width; wrapMode: Text.WordWrap }
                     }
                 }
 
@@ -77,31 +80,67 @@ PluginSettings {
                     width: parent.width
                     spacing: Theme.spacingS
 
-                    Repeater {
+                    ComboBox {
+                        id: protocolCombo
+                        Layout.fillWidth: true
                         model: ["smart", "wireguard", "stealth"]
-                        delegate: Rectangle {
-                            Layout.fillWidth: true
-                            height: 36
-                            radius: Theme.cornerRadius
-                            color: root.defaultProtocol === modelData ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2) : Theme.surfaceContainerHigh
-                            border.color: root.defaultProtocol === modelData ? Theme.primary : Theme.outline
+                        currentIndex: Math.max(0, model.indexOf(root.defaultProtocol))
+                        
+                        onActivated: function(index) {
+                            let val = protocolCombo.model[index];
+                            root.defaultProtocol = val;
+                            root.saveValue("defaultProtocol", val);
+                        }
+
+                        contentItem: StyledText {
+                            leftPadding: 12
+                            rightPadding: 12
+                            text: protocolCombo.displayText
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.surfaceText
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        
+                        background: Rectangle {
+                            color: Theme.surfaceContainerHigh
+                            border.color: Theme.outline
                             border.width: 1
+                            radius: Theme.cornerRadius
+                        }
 
-                            StyledText {
-                                text: modelData.toUpperCase()
-                                anchors.centerIn: parent
+                        delegate: ItemDelegate {
+                            width: protocolCombo.width
+                            contentItem: StyledText {
+                                text: modelData
+                                color: highlighted ? Theme.surface : Theme.surfaceText
                                 font.pixelSize: Theme.fontSizeSmall
-                                font.weight: Font.Bold
-                                color: root.defaultProtocol === modelData ? Theme.primary : Theme.surfaceText
+                                font.weight: highlighted ? Font.Bold : Font.Normal
+                                verticalAlignment: Text.AlignVCenter
+                                leftPadding: 8
                             }
+                            background: Rectangle {
+                                color: highlighted ? Theme.primary : Theme.surfaceContainerHigh
+                                radius: 4
+                            }
+                        }
 
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    root.defaultProtocol = modelData;
-                                    mainSettingsCol.saveValue("defaultProtocol", modelData);
-                                }
+                        popup: Popup {
+                            y: protocolCombo.height + 4
+                            width: protocolCombo.width
+                            implicitHeight: contentItem.implicitHeight
+                            padding: 4
+                            contentItem: ListView {
+                                clip: true
+                                implicitHeight: contentHeight
+                                model: protocolCombo.popup.visible ? protocolCombo.delegateModel : null
+                                currentIndex: protocolCombo.highlightedIndex
+                                ScrollIndicator.vertical: ScrollIndicator { }
+                            }
+                            background: Rectangle {
+                                color: Theme.surfaceContainerHigh
+                                border.color: Theme.outline
+                                border.width: 1
+                                radius: Theme.cornerRadius
                             }
                         }
                     }
@@ -159,7 +198,7 @@ PluginSettings {
                         onEditingFinished: {
                             let val = targetField.text.trim() || "fastest";
                             root.defaultConnectTarget = val;
-                            mainSettingsCol.saveValue("defaultConnectTarget", val);
+                            root.saveValue("defaultConnectTarget", val);
                         }
                     }
 
@@ -183,7 +222,71 @@ PluginSettings {
                             onClicked: {
                                 let val = targetField.text.trim() || "fastest";
                                 root.defaultConnectTarget = val;
-                                mainSettingsCol.saveValue("defaultConnectTarget", val);
+                                root.saveValue("defaultConnectTarget", val);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Paid Servers Only Filter Section ---
+        Rectangle {
+            width: parent.width
+            height: paidCol.implicitHeight + Theme.spacingM * 2
+            color: Theme.surfaceContainer
+            radius: Theme.cornerRadius
+            border.color: Theme.outline
+            border.width: 1
+            opacity: 0.9
+
+            Column {
+                id: paidCol
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: Theme.spacingM
+                spacing: Theme.spacingM
+
+                RowLayout {
+                    width: parent.width
+                    spacing: Theme.spacingM
+                    
+                    DankIcon { 
+                        name: "monetization_on"
+                        size: 22
+                        color: Theme.primary
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+                    
+                    Column {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: Theme.spacingXS
+                        StyledText { text: "Only Show Paid Servers"; font.weight: Font.Medium; color: Theme.surfaceText }
+                        StyledText { text: "WARNING: Only for Paid users. If enabled, free servers will be hidden from the list."; font.pixelSize: Theme.fontSizeSmall; color: Theme.error; width: parent.width; wrapMode: Text.WordWrap }
+                    }
+
+                    Rectangle {
+                        width: 44; height: 24; radius: 12
+                        color: root.paidServersOnly ? Theme.primary : Theme.surfaceContainerHigh
+                        border.color: root.paidServersOnly ? Theme.primary : Theme.outline
+                        border.width: 1
+
+                        Rectangle {
+                            width: 18; height: 18; radius: 9
+                            color: Theme.surface
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: root.paidServersOnly ? parent.width - width - 3 : 3
+                            Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutQuad } }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.paidServersOnly = !root.paidServersOnly;
+                                root.saveValue("paidServersOnly", root.paidServersOnly);
                             }
                         }
                     }
