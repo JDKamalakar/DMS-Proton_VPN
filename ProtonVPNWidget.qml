@@ -13,36 +13,32 @@ import QtQuick.Effects
 PluginComponent {
     id: root
     
-    popoutWidth: 350
+    popoutWidth: 320
     popoutHeight: 0
 
     // --- CC Support ---
     ccWidgetIcon: "vpn_key"
     ccWidgetPrimaryText: "Proton VPN"
-    ccWidgetSecondaryText: root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : (root.isConnecting ? "Connecting..." : (root.isDisconnecting ? "Disconnecting..." : "Disconnected"))
-    ccWidgetIsActive: root.vpnStatus === "Connected"
-    ccDetailHeight: 540
+    ccWidgetSecondaryText: root.connectionTypeLabel.startsWith("Error:") ? root.connectionTypeLabel : (root.isConnecting ? "Connecting..." : (root.isDisconnecting ? "Disconnecting..." : (root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : "Disconnected")))
+    ccWidgetIsActive: root.vpnStatus === "Connected" || root.isConnecting || root.isDisconnecting
+    ccDetailHeight: 480
     onCcWidgetExpanded: root.refresh()
+    onCcWidgetToggled: root.quickConnect()
     
     ccDetailContent: Component {
-        Item {
-            implicitWidth: 350
-            implicitHeight: 540
-            width: parent ? parent.width : 350
-            height: parent ? parent.height : 540
-
-            ScrollView {
-                anchors.fill: parent
-                clip: true
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
-                
-                Loader {
-                    width: 350
-                    height: item ? item.implicitHeight : 540
-                    sourceComponent: vpnWidgetContent
-                    readonly property bool inCC: true
-                }
+        ScrollView {
+            id: ccScrollView
+            anchors.fill: parent
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+            
+            Loader {
+                width: ccScrollView.availableWidth
+                asynchronous: true
+                sourceComponent: vpnWidgetContent
+                readonly property bool inCC: true
             }
         }
     }
@@ -57,6 +53,14 @@ PluginComponent {
     property string vpnStatus: "Disconnected" // "Connected", "Connecting...", "Disconnected", "Daemon Stopped"
     property string connectedServer: ""
     property string connectedCountry: ""
+    property string downloadSpeed: "0 B/s"
+    property string uploadSpeed: "0 B/s"
+
+    function getShortServerName(srv) {
+        if (!srv || srv === "Connected") return "VPN";
+        let s = srv.replace("-FREE", "").replace("FREE", "").trim();
+        return s;
+    }
     property string connectedCountryName: ""
     property string connectedIp: ""
     property string connectedProtocol: ""
@@ -94,8 +98,47 @@ PluginComponent {
     property string _defaultProtocol: PluginService.loadPluginData("protonVPN", "defaultProtocol", "smart")
     property string _defaultConnectTarget: PluginService.loadPluginData("protonVPN", "defaultConnectTarget", "fastest")
 
-    PluginGlobalVar { varName: "defaultProtocol"; onValueChanged: function(val) { root._defaultProtocol = val; } }
-    PluginGlobalVar { varName: "defaultConnectTarget"; onValueChanged: function(val) { root._defaultConnectTarget = val; } }
+    property string _quickConnectType: PluginService.loadPluginData("protonVPN", "quickConnectType", "fastest")
+    property string _quickConnectCountry: PluginService.loadPluginData("protonVPN", "quickConnectCountry", "US")
+    property string _quickConnectCustom: PluginService.loadPluginData("protonVPN", "quickConnectCustom", "")
+
+    PluginGlobalVar { varName: "defaultProtocol"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._defaultProtocol = val; } }
+    PluginGlobalVar { varName: "quickConnectType"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._quickConnectType = val; } }
+    PluginGlobalVar { varName: "quickConnectCountry"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._quickConnectCountry = val; } }
+    PluginGlobalVar { varName: "quickConnectCustom"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._quickConnectCustom = val; } }
+
+    function quickConnect() {
+        if (root.isConnecting || root.isDisconnecting || connectProc.running || disconnectProc.running) return;
+
+        if (root.vpnStatus === "Connected") {
+            root.disconnectVpn();
+            return;
+        }
+        
+        let type = PluginService.loadPluginData("protonVPN", "quickConnectType", root._quickConnectType || "fastest");
+        if (type === "country_fastest") {
+            let target = PluginService.loadPluginData("protonVPN", "quickConnectCountry", root._quickConnectCountry || "US");
+            root.connectVpn(target);
+        } else if (type === "country_random") {
+            if (root.countriesList && root.countriesList.length > 0) {
+                let randomIndex = Math.floor(Math.random() * root.countriesList.length);
+                let target = root.countriesList[randomIndex].code;
+                root.connectVpn(target);
+            } else {
+                root.connectVpn("fastest");
+            }
+        } else if (type === "custom") {
+            let target = (PluginService.loadPluginData("protonVPN", "quickConnectCustom", root._quickConnectCustom || "") || "").trim();
+            if (!target) {
+                root.vpnStatus = "Disconnected";
+                root.connectionTypeLabel = "Error: Custom server not specified";
+                return;
+            }
+            root.connectVpn(target);
+        } else {
+            root.connectVpn("fastest");
+        }
+    }
 
     // --- Country Flag & Name Helpers ---
     function getCountryFlag(code) {
@@ -127,7 +170,7 @@ PluginComponent {
     // --- Scanners & Process Execution ---
     Process {
         id: statusScanner
-        command: ["bash", "-c", "pvpnctl status --format waybar 2>/dev/null || echo '{\"class\":\"disconnected\"}'; echo '---'; pvpnctl status 2>/dev/null || echo 'Disconnected'"]
+        command: ["bash", "-c", "timeout 2 pvpnctl status --format waybar 2>/dev/null || echo '{\"class\":\"disconnected\"}'; echo '---'; timeout 2 pvpnctl status 2>/dev/null || echo 'Disconnected'"]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -135,10 +178,12 @@ PluginComponent {
                     if (!raw) return;
                     
                     if (raw.includes("Cannot connect to pvpnd")) {
-                        root.vpnStatus = "Daemon Stopped";
-                        root.isConnecting = false;
-                        root.isDisconnecting = false;
-                        root.connectionTypeLabel = "pvpnd Daemon Stopped";
+                        if (!root.isConnecting && !root.isDisconnecting && !connectProc.running && !disconnectProc.running) {
+                            root.vpnStatus = "Daemon Stopped";
+                            root.isConnecting = false;
+                            root.isDisconnecting = false;
+                            root.connectionTypeLabel = "pvpnd Daemon Stopped";
+                        }
                         return;
                     }
 
@@ -152,7 +197,11 @@ PluginComponent {
                     let isConnected = (data.class === "connected") || rawStatusStr.toLowerCase().includes("status: connected") || rawStatusStr.toLowerCase().includes("connected to");
                     let isDaemonConnecting = (data.class === "connecting") || rawStatusStr.toLowerCase().includes("connecting");
 
-                    if (isConnected) {
+                    if (root.isDisconnecting || disconnectProc.running) {
+                        root.vpnStatus = "Disconnecting...";
+                        root.isDisconnecting = true;
+                        root.isConnecting = false;
+                    } else if (isConnected) {
                         root.vpnStatus = "Connected";
                         root.isConnecting = false;
                         root.isDisconnecting = false;
@@ -216,8 +265,26 @@ PluginComponent {
                         }
 
                         root.connectionTypeLabel = root.connectedServer || "Connected";
-                        
-                    } else if (isDaemonConnecting || (root.isConnecting && !root.isDisconnecting)) {
+
+                        let dl = "";
+                        let ul = "";
+                        let combinedText = rawStatusStr + "\n" + (data.tooltip || "") + "\n" + (data.text || "");
+                        let stLines = combinedText.split('\n');
+                        for (let k = 0; k < stLines.length; k++) {
+                            let sl = stLines[k].trim();
+                            let slow = sl.toLowerCase();
+                            if (slow.includes("download") || slow.includes("down:") || slow.includes("dl:")) {
+                                let parts = sl.split(':');
+                                if (parts.length > 1) dl = parts.slice(1).join(':').trim();
+                            }
+                            if (slow.includes("upload") || slow.includes("up:") || slow.includes("ul:")) {
+                                let parts = sl.split(':');
+                                if (parts.length > 1) ul = parts.slice(1).join(':').trim();
+                            }
+                        }
+                        root.downloadSpeed = dl || "0 B/s";
+                        root.uploadSpeed = ul || "0 B/s";
+                    } else if (root.isConnecting || connectProc.running || connectTimeoutTimer.running || isDaemonConnecting) {
                         root.vpnStatus = "Connecting...";
                         root.isConnecting = true;
                         root.isDisconnecting = false;
@@ -231,7 +298,11 @@ PluginComponent {
                         root.connectedCountry = "";
                         root.connectedCountryName = "";
                         root.connectedProtocol = "";
-                        root.connectionTypeLabel = "Disconnected";
+                        root.downloadSpeed = "0 B/s";
+                        root.uploadSpeed = "0 B/s";
+                        if (!root.connectionTypeLabel.startsWith("Error:")) {
+                            root.connectionTypeLabel = "Disconnected";
+                        }
                     }
                 } catch(e) {
                     if (!root.isConnecting && !root.isDisconnecting) {
@@ -245,11 +316,25 @@ PluginComponent {
     }
 
     property bool _paidServersOnly: PluginService.loadPluginData("protonVPN", "paidServersOnly", false)
-    PluginGlobalVar { varName: "paidServersOnly"; onValueChanged: function(val) { root._paidServersOnly = val; } }
+    property bool _showConnectContainer: PluginService.loadPluginData("protonVPN", "showConnectContainer", true)
+    property bool _showSpeedContainer: PluginService.loadPluginData("protonVPN", "showSpeedContainer", true)
+
+    PluginGlobalVar { 
+        varName: "paidServersOnly"
+        onValueChanged: function(val) { 
+            if (val !== undefined && val !== null) {
+                root._paidServersOnly = val; 
+                root._lastServersJson = "";
+                root.fetchServers();
+            }
+        } 
+    }
+    PluginGlobalVar { varName: "showConnectContainer"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._showConnectContainer = val; } }
+    PluginGlobalVar { varName: "showSpeedContainer"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._showSpeedContainer = val; } }
 
     Process {
         id: serversScanner
-        command: ["bash", "-c", "pvpnctl servers || echo ''"]
+        command: ["bash", "-c", "timeout 3 pvpnctl servers 2>/dev/null || echo ''"]
         stdout: StdioCollector {
             onStreamFinished: {
                 let raw = text.trim();
@@ -308,13 +393,21 @@ PluginComponent {
     Process {
         id: connectProc
         running: false
+        stdout: StdioCollector { id: connectStdout }
+        stderr: StdioCollector { id: connectStderr }
         onExited: {
             if (exitCode !== 0) {
                 root.isConnecting = false;
                 root.isDisconnecting = false;
                 root.vpnStatus = "Disconnected";
-                root.connectionTypeLabel = "Connection Failed";
+                let errText = connectStderr.text ? connectStderr.text.trim() : (connectStdout.text ? connectStdout.text.trim() : "");
+                if (errText) {
+                    errText = errText.split('\n')[0].trim();
+                }
+                root.connectionTypeLabel = errText ? ("Error: " + errText) : "Connection Failed";
                 connectTimeoutTimer.stop();
+            } else {
+                root.isConnecting = true; // keep connecting true until statusScanner confirms connected
             }
             root.refresh();
             statusTimer.restart();
@@ -325,10 +418,18 @@ PluginComponent {
         id: disconnectProc
         running: false
         onExited: {
-            if (exitCode !== 0) {
-                root.isDisconnecting = false;
-                connectTimeoutTimer.stop();
+            root.isDisconnecting = false;
+            root.isConnecting = false;
+            if (exitCode === 0) {
+                root.vpnStatus = "Disconnected";
+                root.connectedServer = "";
+                root.connectedIp = "";
+                root.connectedCountry = "";
+                root.connectedCountryName = "";
+                root.connectedProtocol = "";
+                root.connectionTypeLabel = "Disconnected";
             }
+            connectTimeoutTimer.stop();
             root.refresh();
             statusTimer.restart();
         }
@@ -341,6 +442,8 @@ PluginComponent {
         onTriggered: {
             root.isConnecting = false;
             root.isDisconnecting = false;
+            connectProc.running = false;
+            disconnectProc.running = false;
             root.refresh();
         }
     }
@@ -371,6 +474,7 @@ PluginComponent {
     }
 
     function connectVpn(target) {
+        if (connectProc.running || disconnectProc.running) return;
         root.isConnecting = true;
         root.isDisconnecting = false;
         root.vpnStatus = "Connecting...";
@@ -379,7 +483,7 @@ PluginComponent {
         connectTimeoutTimer.restart();
         
         let proto = root._defaultProtocol || "smart";
-        let cmd = "pvpnctl connect \"" + tgt + "\"";
+        let cmd = "timeout 15 pvpnctl connect \"" + tgt + "\"";
         if (proto !== "smart") {
             cmd += " --protocol " + proto;
         }
@@ -389,14 +493,36 @@ PluginComponent {
     }
 
     function disconnectVpn() {
+        if (connectProc.running || disconnectProc.running) return;
         root.isDisconnecting = true;
         root.isConnecting = false;
         root.vpnStatus = "Disconnecting...";
         root.connectionTypeLabel = "Disconnecting...";
         connectTimeoutTimer.restart();
         
-        disconnectProc.command = ["bash", "-c", "pvpnctl disconnect"];
+        disconnectProc.command = ["bash", "-c", "timeout 10 pvpnctl disconnect"];
         disconnectProc.running = true;
+        statusTimer.restart();
+    }
+
+    function reconnectVpn() {
+        if (connectProc.running || disconnectProc.running) return;
+        
+        let target = root.connectedServer || root.connectedCountry || root._quickConnectCountry || "fastest";
+        
+        root.isConnecting = true;
+        root.isDisconnecting = false;
+        root.vpnStatus = "Connecting...";
+        root.connectionTypeLabel = "Reconnecting to " + target + "...";
+        connectTimeoutTimer.restart();
+        
+        let proto = root._defaultProtocol || "smart";
+        let cmd = "pvpnctl disconnect 2>/dev/null; sleep 0.5; pvpnctl connect \"" + target + "\"";
+        if (proto !== "smart") {
+            cmd += " --protocol " + proto;
+        }
+        connectProc.command = ["timeout", "15", "bash", "-c", cmd];
+        connectProc.running = true;
         statusTimer.restart();
     }
 
@@ -419,15 +545,10 @@ PluginComponent {
                             anchors.fill: parent
                             Image {
                                 id: pillMonoImgH
-                                source: Qt.resolvedUrl("assets/icons/Proton-VPN_Mono.svg")
+                                source: Qt.resolvedUrl(Theme.isLightMode ? "assets/icons/Proton-VPN_Mono_Dark.svg" : "assets/icons/Proton-VPN_Mono.svg")
                                 anchors.fill: parent
+                                fillMode: Image.PreserveAspectFit
                                 smooth: true
-                            }
-                            MultiEffect {
-                                anchors.fill: pillMonoImgH
-                                source: pillMonoImgH
-                                colorization: 1.0
-                                colorizationColor: root.vpnStatus === "Connected" ? Theme.primary : (Theme.isDarkMode ? "#ffffff" : "#000000")
                             }
                         }
                     }
@@ -437,9 +558,9 @@ PluginComponent {
                 height: 20; Layout.fillWidth: false; Layout.preferredWidth: Math.max(pillTextH.implicitWidth, 60); Layout.alignment: Qt.AlignVCenter
                 StyledText { 
                     id: pillTextH
-                    text: root.isConnecting ? "Connecting..." : (root.isDisconnecting ? "Disconnecting..." : (root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : "Disconnected"))
+                    text: root.connectionTypeLabel.startsWith("Error:") ? root.connectionTypeLabel : (root.isConnecting ? "Connecting..." : (root.isDisconnecting ? "Disconnecting..." : (root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : "Disconnected")))
                     font.pixelSize: Theme.fontSizeSmall - 1; font.weight: Font.Medium
-                    color: root.vpnStatus === "Connected" ? Theme.primary : (Theme.widgetTextColor || Theme.surfaceText)
+                    color: root.vpnStatus === "Connected" ? Theme.primary : (root.connectionTypeLabel.startsWith("Error:") ? "#ff5555" : (Theme.widgetTextColor || Theme.surfaceText))
                     anchors.verticalCenter: parent.verticalCenter
                 }
             }
@@ -447,32 +568,47 @@ PluginComponent {
     }
 
     verticalBarPill: Component {
-        Item {
-            width: 18; height: 18
+        ColumnLayout {
+            spacing: 2
             anchors.horizontalCenter: parent.horizontalCenter
-            Loader {
-                id: pillIconLoaderV
-                anchors.fill: parent
-                asynchronous: true
-                sourceComponent: (root.loading || root.isConnecting || root.isDisconnecting) ? refreshingIconComp : standardPillIconV
-                
-                Component {
-                    id: standardPillIconV
-                    Item {
-                        anchors.fill: parent
-                        Image {
-                            id: pillMonoImgV
-                            source: Qt.resolvedUrl("assets/icons/Proton-VPN_Mono.svg")
+
+            Item {
+                width: 18; height: 18
+                Layout.alignment: Qt.AlignHCenter
+                Loader {
+                    id: pillIconLoaderV
+                    anchors.fill: parent
+                    asynchronous: true
+                    sourceComponent: (root.loading || root.isConnecting || root.isDisconnecting) ? refreshingIconComp : standardPillIconV
+                    
+                    Component {
+                        id: standardPillIconV
+                        Item {
                             anchors.fill: parent
-                            smooth: true
-                        }
-                        MultiEffect {
-                            anchors.fill: pillMonoImgV
-                            source: pillMonoImgV
-                            colorization: 1.0
-                            colorizationColor: root.vpnStatus === "Connected" ? Theme.primary : (Theme.isDarkMode ? "#ffffff" : "#000000")
+                            Image {
+                                id: pillMonoImgV
+                                source: Qt.resolvedUrl(Theme.isLightMode ? "assets/icons/Proton-VPN_Mono_Dark.svg" : "assets/icons/Proton-VPN_Mono.svg")
+                                anchors.fill: parent
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                            }
                         }
                     }
+                }
+            }
+
+            Item {
+                width: 26; height: 12
+                clip: true
+                Layout.alignment: Qt.AlignHCenter
+
+                StyledText {
+                    id: pillTextV
+                    text: root.isConnecting || root.isDisconnecting ? "..." : (root.vpnStatus === "Connected" ? root.getShortServerName(root.connectedServer) : "...")
+                    font.pixelSize: 9
+                    font.weight: Font.Bold
+                    color: root.vpnStatus === "Connected" ? Theme.primary : (Theme.widgetTextColor || Theme.surfaceText)
+                    anchors.horizontalCenter: parent.horizontalCenter
                 }
             }
         }
@@ -496,47 +632,13 @@ PluginComponent {
         }
     }
 
-    // --- Shared Components ---
-    Component {
-        id: sectionHeaderComponent
-        RowLayout {
-            spacing: Theme.spacingXS
-            Item {
-                id: svgContainer
-                width: 16; height: 16
-                visible: typeof sectionSvg !== "undefined" && sectionSvg !== ""
-                Layout.alignment: Qt.AlignVCenter
-                Image {
-                    id: headerSvgImg
-                    source: (typeof sectionSvg !== "undefined" && sectionSvg !== "") ? Qt.resolvedUrl(sectionSvg) : ""
-                    anchors.fill: parent
-                    sourceSize.width: 16; sourceSize.height: 16
-                    smooth: true
-                }
-                MultiEffect {
-                    anchors.fill: headerSvgImg
-                    source: headerSvgImg
-                    colorization: 1.0
-                    colorizationColor: Theme.surfaceText
-                }
-            }
-            DankIcon {
-                name: typeof sectionIcon !== "undefined" ? sectionIcon : "info"
-                size: 16
-                // FIX: Use theme surface text color here as well
-                color: Theme.surfaceText
-                visible: typeof sectionSvg === "undefined" || sectionSvg === ""
-            }
-            StyledText { text: sectionTitle; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.surfaceText; Layout.fillWidth: true }
-        }
-    }
 
     // --- Content Component ---
     Component {
         id: vpnWidgetContent
         Column {
-            id: mainCol; width: parent ? parent.width : 350; spacing: Theme.spacingM
-            property bool inCC: false
+            id: mainCol; width: parent.width; spacing: Theme.spacingM
+            property bool inCC: (parent && parent.inCC) || false
 
             padding: inCC ? 16 : 0
             topPadding: 0
@@ -559,26 +661,22 @@ PluginComponent {
                         border.width: 1
 
                         Item {
-                            anchors.fill: parent
+                            width: 24; height: 24
+                            anchors.centerIn: parent
                             Image {
+                                id: defaultIcon
                                 source: Qt.resolvedUrl("assets/icons/Proton-VPN.svg")
-                                width: 26; height: 26
-                                anchors.centerIn: parent
-                                anchors.horizontalCenterOffset: -1
-                                anchors.verticalCenterOffset: -1
+                                anchors.fill: parent
                                 fillMode: Image.PreserveAspectFit
-                                sourceSize.width: 26; sourceSize.height: 26
                                 smooth: true
                                 visible: !(root.vpnStatus === "Connected" && root.connectedCountry)
                             }
                             Text {
                                 text: (root.vpnStatus === "Connected" && root.connectedCountry) ? root.getCountryFlag(root.connectedCountry) : ""
-                                font.pixelSize: 26
+                                font.pixelSize: 22
                                 font.family: "Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, EmojiOne Color, Twemoji, sans-serif"
                                 color: Theme.surfaceText
                                 anchors.centerIn: parent
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
                                 visible: text !== ""
                             }
                         }
@@ -595,9 +693,15 @@ PluginComponent {
                         StyledText { 
                             id: statusLabelText
                             Layout.fillWidth: true
-                            text: root.isConnecting ? "Connecting..." : (root.isDisconnecting ? "Disconnecting..." : (root.vpnStatus === "Connected" ? (root.connectedCountryName || root.connectedServer || "Connected") : "Disconnected"))
+                            text: root.connectionTypeLabel.startsWith("Error:") 
+                                ? root.connectionTypeLabel 
+                                : (root.isConnecting 
+                                    ? (root.connectionTypeLabel.startsWith("Reconnecting") || root.connectionTypeLabel.startsWith("Connecting") ? root.connectionTypeLabel : "Connecting...") 
+                                    : (root.isDisconnecting 
+                                        ? "Disconnecting..." 
+                                        : (root.vpnStatus === "Connected" ? (root.connectedCountryName || root.connectedServer || "Connected") : "Disconnected")))
                             font.pixelSize: Theme.fontSizeSmall - 1
-                            color: root.vpnStatus === "Connected" ? Theme.primary : Theme.surfaceVariantText
+                            color: (root.vpnStatus === "Connected" || root.isConnecting) ? Theme.primary : (root.connectionTypeLabel.startsWith("Error:") ? "#ff5555" : Theme.surfaceVariantText)
                             font.family: "Monospace"
                             opacity: 0.8
                             verticalAlignment: Text.AlignVCenter
@@ -605,41 +709,49 @@ PluginComponent {
                         }
                     }
 
-                    Item {
+                    Row {
                         id: headerActionBtnContainer
-                        width: 106; height: 38
                         Layout.alignment: Qt.AlignVCenter
+                        spacing: 4
 
+                        // Main Button (Connect / Disconnect icon-only when connected)
                         Item {
-                            id: morphingBtn
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: (root.isConnecting || root.isDisconnecting) ? 38 : 106
+                            id: mainActionBtn
+                            width: (root.isConnecting || root.isDisconnecting || root.vpnStatus === "Connected") ? 38 : 106
                             height: 38
 
-                            Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutQuad } }
-                            scale: maHeaderBtn.pressed ? 0.92 : (maHeaderBtn.containsMouse ? 1.05 : 1.0)
+                            Behavior on width { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.InOutQuad } }
+                            scale: maMainBtn.pressed ? 0.92 : (maMainBtn.containsMouse ? 1.05 : 1.0)
                             Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
                             Rectangle {
-                                id: headerActionBg
+                                id: mainActionBg
                                 anchors.fill: parent
-                                radius: (root.isConnecting || root.isDisconnecting) ? 19 : Theme.cornerRadius
-                                Behavior on radius { NumberAnimation { duration: 250; easing.type: Easing.OutQuad } }
+                                readonly property bool showReconnect: root.vpnStatus === "Connected" && !root.isConnecting && !root.isDisconnecting
+                                topLeftRadius: (root.isConnecting || root.isDisconnecting || maMainBtn.pressed) ? height / 2 : Theme.cornerRadius
+                                bottomLeftRadius: (root.isConnecting || root.isDisconnecting || maMainBtn.pressed) ? height / 2 : Theme.cornerRadius
+                                topRightRadius: (root.isConnecting || root.isDisconnecting || maMainBtn.pressed) ? height / 2 : (showReconnect ? 4 : Theme.cornerRadius)
+                                bottomRightRadius: (root.isConnecting || root.isDisconnecting || maMainBtn.pressed) ? height / 2 : (showReconnect ? 4 : Theme.cornerRadius)
 
-                                color: maHeaderBtn.containsMouse 
-                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) 
-                                    : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.4)
+                                color: maMainBtn.pressed 
+                                    ? Theme.withAlpha(Theme.primary, 0.2) 
+                                    : (maMainBtn.containsMouse 
+                                        ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) 
+                                        : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.4))
                                 border.width: 1
-                                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, maHeaderBtn.containsMouse ? 0.3 : 0.15)
+                                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, maMainBtn.containsMouse ? 0.3 : 0.15)
 
-                                Behavior on color { ColorAnimation { duration: 150 } }
-                                Behavior on border.color { ColorAnimation { duration: 150 } }
+                                Behavior on color { ColorAnimation { duration: Theme.popoutAnimationDuration } }
+                                Behavior on border.color { ColorAnimation { duration: Theme.popoutAnimationDuration } }
+                                Behavior on topLeftRadius { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.InOutQuad } }
+                                Behavior on bottomLeftRadius { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.InOutQuad } }
+                                Behavior on topRightRadius { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.InOutQuad } }
+                                Behavior on bottomRightRadius { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.InOutQuad } }
                             }
 
                             RowLayout {
                                 anchors.centerIn: parent
-                                spacing: (root.isConnecting || root.isDisconnecting) ? 0 : 6
+                                spacing: (root.isConnecting || root.isDisconnecting || root.vpnStatus === "Connected") ? 0 : 6
 
                                 DankIcon {
                                     id: connBtnIcon
@@ -655,38 +767,104 @@ PluginComponent {
                                 }
 
                                 StyledText {
-                                    text: root.vpnStatus === "Connected" ? "Disconnect" : "Connect"
+                                    text: "Connect"
                                     font.pixelSize: Theme.fontSizeSmall
                                     font.weight: Font.Normal
                                     color: Theme.primary
                                     visible: opacity > 0
-                                    opacity: (root.isConnecting || root.isDisconnecting) ? 0.0 : 1.0
+                                    opacity: (root.isConnecting || root.isDisconnecting || root.vpnStatus === "Connected") ? 0.0 : 1.0
                                     Behavior on opacity { NumberAnimation { duration: 150 } }
                                     Layout.alignment: Qt.AlignVCenter
                                 }
                             }
 
                             DankRipple {
-                                id: headerBtnRipple
+                                id: mainBtnRipple
                                 anchors.fill: parent
-                                cornerRadius: headerActionBg.radius
+                                cornerRadius: mainActionBg.topLeftRadius
                                 rippleColor: Theme.primary
                             }
 
                             MouseArea {
-                                id: maHeaderBtn
+                                id: maMainBtn
                                 anchors.fill: parent
-                                hoverEnabled: !root.isConnecting && !root.isDisconnecting
+                                hoverEnabled: true
                                 enabled: !root.isConnecting && !root.isDisconnecting
-                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onPressed: mouse => headerBtnRipple.trigger(mouse.x, mouse.y)
+                                cursorShape: Qt.PointingHandCursor
+                                onPressed: mouse => mainBtnRipple.trigger(mouse.x, mouse.y)
                                 onClicked: {
                                     if (root.vpnStatus === "Connected") {
                                         root.disconnectVpn();
                                     } else {
-                                        root.connectVpn(root._defaultConnectTarget);
+                                        root.quickConnect();
                                     }
                                 }
+                            }
+                        }
+
+                        // Reconnect Button (smoothly animates width & opacity on enter/exit)
+                        Item {
+                            id: reconnectBtn
+                            readonly property bool showReconnect: root.vpnStatus === "Connected" && !root.isConnecting && !root.isDisconnecting
+                            width: showReconnect ? 38 : 0
+                            height: 38
+                            opacity: showReconnect ? 1.0 : 0.0
+                            visible: width > 0 || opacity > 0
+                            clip: true
+
+                            Behavior on width { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.InOutQuad } }
+                            Behavior on opacity { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.InOutQuad } }
+
+                            scale: maReconnectBtn.pressed ? 0.92 : (maReconnectBtn.containsMouse ? 1.05 : 1.0)
+                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+
+                            Rectangle {
+                                id: reconnectBg
+                                anchors.fill: parent
+                                topLeftRadius: maReconnectBtn.pressed ? height / 2 : 4
+                                bottomLeftRadius: maReconnectBtn.pressed ? height / 2 : 4
+                                topRightRadius: maReconnectBtn.pressed ? height / 2 : Theme.cornerRadius
+                                bottomRightRadius: maReconnectBtn.pressed ? height / 2 : Theme.cornerRadius
+
+                                color: maReconnectBtn.pressed 
+                                    ? Theme.withAlpha(Theme.primary, 0.2) 
+                                    : (maReconnectBtn.containsMouse 
+                                        ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) 
+                                        : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.4))
+                                border.width: 1
+                                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, maReconnectBtn.containsMouse ? 0.3 : 0.15)
+
+                                Behavior on color { ColorAnimation { duration: Theme.popoutAnimationDuration } }
+                                Behavior on border.color { ColorAnimation { duration: Theme.popoutAnimationDuration } }
+                                Behavior on topLeftRadius { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.InOutQuad } }
+                                Behavior on bottomLeftRadius { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.InOutQuad } }
+                                Behavior on topRightRadius { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.InOutQuad } }
+                                Behavior on bottomRightRadius { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.InOutQuad } }
+                            }
+
+                            DankIcon {
+                                name: "sync_alt"
+                                size: 18
+                                color: Theme.primary
+                                anchors.centerIn: parent
+                                rotation: maReconnectBtn.containsMouse ? 180 : 0
+                                Behavior on rotation { NumberAnimation { duration: Theme.popoutAnimationDuration; easing.type: Easing.OutBack } }
+                            }
+
+                            DankRipple {
+                                id: reconnectBtnRipple
+                                anchors.fill: parent
+                                cornerRadius: reconnectBg.topLeftRadius
+                                rippleColor: Theme.primary
+                            }
+
+                            MouseArea {
+                                id: maReconnectBtn
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onPressed: mouse => reconnectBtnRipple.trigger(mouse.x, mouse.y)
+                                onClicked: root.reconnectVpn()
                             }
                         }
                     }
@@ -695,7 +873,7 @@ PluginComponent {
 
             // 2. Connection Details Container
             StyledRect {
-                width: parent.width; anchors.horizontalCenter: parent.horizontalCenter
+                width: Math.max(0, parent.width - (mainCol.inCC ? 32 : 0)); anchors.horizontalCenter: parent.horizontalCenter
                 height: connDetailsCol.implicitHeight + Theme.spacingM * 2
                 radius: Theme.cornerRadius; color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
                 border.width: 1; border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
@@ -705,12 +883,23 @@ PluginComponent {
                     anchors.fill: parent; anchors.margins: Theme.spacingM
                     spacing: Theme.spacingS
 
-                    Loader {
+                    RowLayout {
                         width: parent.width
-                        asynchronous: true
-                        property string sectionIcon: "info"
-                        property string sectionTitle: "Details"
-                        sourceComponent: sectionHeaderComponent
+                        spacing: Theme.spacingXS
+                        DankIcon {
+                            name: "info"
+                            size: 14
+                            color: Theme.surfaceText
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                        StyledText {
+                            text: "Details"
+                            font.pixelSize: Theme.fontSizeSmall
+                            font.weight: Font.Bold
+                            color: Theme.surfaceText
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
                     }
 
                     Column {
@@ -747,7 +936,7 @@ PluginComponent {
 
                             RowLayout {
                                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
-                                DankIcon { name: "dns"; size: 16; color: Theme.surfaceText; opacity: 0.7 }
+                                DankIcon { name: "dns"; size: 16; color: Theme.surfaceText; opacity: 0.7; Layout.alignment: Qt.AlignVCenter }
                                 StyledText { text: "Server"; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceText }
                                 Item { Layout.fillWidth: true }
                                 StyledText { text: root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : "Disconnected"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: root.vpnStatus === "Connected" ? Theme.primary : Theme.surfaceVariantText }
@@ -783,7 +972,7 @@ PluginComponent {
 
                             RowLayout {
                                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
-                                DankIcon { name: "public"; size: 16; color: Theme.surfaceText; opacity: 0.7 }
+                                DankIcon { name: "location_on"; size: 16; color: Theme.surfaceText; opacity: 0.7; Layout.alignment: Qt.AlignVCenter }
                                 StyledText { text: "Region"; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceText }
                                 Item { Layout.fillWidth: true }
                                 StyledText { 
@@ -823,7 +1012,7 @@ PluginComponent {
 
                             RowLayout {
                                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
-                                DankIcon { name: "security"; size: 16; color: Theme.surfaceText; opacity: 0.7 }
+                                DankIcon { name: "security"; size: 16; color: Theme.surfaceText; opacity: 0.7; Layout.alignment: Qt.AlignVCenter }
                                 StyledText { text: "Protocol"; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceText }
                                 Item { Layout.fillWidth: true }
                                 StyledText { 
@@ -836,14 +1025,71 @@ PluginComponent {
                 }
             }
 
+            // 2b. Speed Container
+            StyledRect {
+                width: Math.max(0, parent.width - (mainCol.inCC ? 32 : 0)); anchors.horizontalCenter: parent.horizontalCenter
+                height: 72
+                radius: Theme.cornerRadius; color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
+                border.width: 1; border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                visible: root.vpnStatus === "Connected" && root._showSpeedContainer
+
+                RowLayout {
+                    anchors.fill: parent; anchors.margins: Theme.spacingM
+                    spacing: Theme.spacingM
+
+                    // Download Box
+                    Item {
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        Rectangle {
+                            anchors.fill: parent; radius: 8
+                            color: Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04)
+                            border.color: Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15)
+                            border.width: 1
+                        }
+                        RowLayout {
+                            anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                            spacing: 6
+                            DankIcon { name: "arrow_downward"; size: 16; color: Theme.primary; Layout.alignment: Qt.AlignVCenter }
+                            Column {
+                                Layout.alignment: Qt.AlignVCenter; spacing: 0
+                                StyledText { text: "Download"; font.pixelSize: Theme.fontSizeSmall - 2; color: Theme.surfaceVariantText }
+                                StyledText { text: root.downloadSpeed; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.surfaceText }
+                            }
+                        }
+                    }
+
+                    // Upload Box
+                    Item {
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        Rectangle {
+                            anchors.fill: parent; radius: 8
+                            color: Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04)
+                            border.color: Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15)
+                            border.width: 1
+                        }
+                        RowLayout {
+                            anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                            spacing: 6
+                            DankIcon { name: "arrow_upward"; size: 16; color: Theme.primary; Layout.alignment: Qt.AlignVCenter }
+                            Column {
+                                Layout.alignment: Qt.AlignVCenter; spacing: 0
+                                StyledText { text: "Upload"; font.pixelSize: Theme.fontSizeSmall - 2; color: Theme.surfaceVariantText }
+                                StyledText { text: root.uploadSpeed; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.surfaceText }
+                            }
+                        }
+                    }
+                }
+            }
+
             // 3. Connect (Main Quick Connect Action Bar + Countries List)
             StyledRect {
                 id: connectSection
-                width: parent.width
+                width: Math.max(0, parent.width - (mainCol.inCC ? 32 : 0))
                 anchors.horizontalCenter: parent.horizontalCenter
                 height: connectSectionCol.implicitHeight + Theme.spacingM * 2
                 radius: Theme.cornerRadius; color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
                 border.width: 1; border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                visible: root._showConnectContainer
                 
                 Behavior on height { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -851,12 +1097,34 @@ PluginComponent {
                     id: connectSectionCol
                     anchors.fill: parent; anchors.margins: Theme.spacingM
                     spacing: Theme.spacingS
-                    Loader {
+                    RowLayout {
                         width: parent.width
-                        asynchronous: true
-                        property string sectionSvg: "assets/icons/Connect.svg"
-                        property string sectionTitle: "Connect"
-                        sourceComponent: sectionHeaderComponent
+                        spacing: Theme.spacingXS
+                        Item {
+                            width: 14; height: 14
+                            Layout.alignment: Qt.AlignVCenter
+                            Image {
+                                id: connectHeaderSvg
+                                source: Qt.resolvedUrl("assets/icons/Connect.svg")
+                                anchors.fill: parent
+                                sourceSize.width: 14; sourceSize.height: 14
+                                smooth: true
+                            }
+                            MultiEffect {
+                                anchors.fill: connectHeaderSvg
+                                source: connectHeaderSvg
+                                colorization: 1.0
+                                colorizationColor: Theme.surfaceText
+                            }
+                        }
+                        StyledText {
+                            text: "Connect"
+                            font.pixelSize: Theme.fontSizeSmall
+                            font.weight: Font.Bold
+                            color: Theme.surfaceText
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
                     }
 
                     Item {
@@ -918,16 +1186,27 @@ PluginComponent {
                             id: maQuickConn
                             anchors.fill: parent
                             hoverEnabled: true
-                            enabled: !root.isConnecting && !root.isDisconnecting
+                            enabled: !root.isDisconnecting
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onPressed: mouse => quickConnRipple.trigger(mouse.x, mouse.y)
-                            onClicked: root.connectVpn("fastest")
+                            onClicked: root.quickConnect()
                         }
 
                         RowLayout {
                             anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
                             DankIcon { name: "bolt"; size: 18; color: Theme.isDarkMode ? "#ffffff" : "#000000"; Layout.alignment: Qt.AlignVCenter }
-                            StyledText { text: "Quick Connect (Fastest)"; Layout.fillWidth: true; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.primary }
+                            StyledText { 
+                                text: {
+                                    let t = PluginService.loadPluginData("protonVPN", "quickConnectType", root._quickConnectType || "fastest");
+                                    let c = PluginService.loadPluginData("protonVPN", "quickConnectCountry", root._quickConnectCountry || "US");
+                                    let cust = PluginService.loadPluginData("protonVPN", "quickConnectCustom", root._quickConnectCustom || "");
+                                    if (t === "country_fastest") return "Quick Connect (" + (root.getCountryName(c) || c) + ")";
+                                    if (t === "country_random") return "Quick Connect (Random Country)";
+                                    if (t === "custom") return "Quick Connect (" + (cust || "Custom") + ")";
+                                    return "Quick Connect (Fastest)";
+                                }
+                                Layout.fillWidth: true; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.primary 
+                            }
                         }
                     }
 
@@ -1010,7 +1289,7 @@ PluginComponent {
 
                                     MouseArea {
                                         id: maCountryHeader; anchors.fill: parent; hoverEnabled: true
-                                        enabled: !root.isConnecting && !root.isDisconnecting
+                                        enabled: !root.isDisconnecting
                                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                         onPressed: mouse => countryRipple.trigger(mouse.x, mouse.y)
                                         onClicked: {
@@ -1024,27 +1303,28 @@ PluginComponent {
 
                                     RowLayout {
                                         anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
-                                        
+
                                         Item {
-                                            width: 24; height: 24
+                                            width: 16; height: 16
+                                            Layout.preferredWidth: 16
+                                            Layout.preferredHeight: 16
                                             Layout.alignment: Qt.AlignVCenter
                                             Text {
                                                 text: modelData.flag
-                                                font.pixelSize: 18
+                                                font.pixelSize: 20
                                                 font.family: "Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, EmojiOne Color, Twemoji, sans-serif"
-                                                color: Theme.surfaceText
-                                                anchors.centerIn: parent
-                                                horizontalAlignment: Text.AlignHCenter
-                                                verticalAlignment: Text.AlignVCenter
+                                                anchors.left: parent.left
+                                                anchors.verticalCenter: parent.verticalCenter
                                             }
                                         }
 
-                                        StyledText { text: modelData.name; Layout.fillWidth: true; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Medium; color: Theme.surfaceText; Layout.alignment: Qt.AlignVCenter }
-                                        
-                                        DankIcon { 
+                                        StyledText { text: modelData.name; Layout.fillWidth: true; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: Theme.surfaceText; Layout.alignment: Qt.AlignVCenter }
+
+                                        DankIcon {
                                             name: "expand_more"
-                                            size: 18
+                                            size: 16
                                             color: Theme.surfaceVariantText
+                                            opacity: 0.7
                                             Layout.alignment: Qt.AlignVCenter
                                             rotation: isExpanded ? 180 : 0
                                             Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
@@ -1056,8 +1336,8 @@ PluginComponent {
                                     id: expContainer
                                     anchors.top: countryHeaderArea.bottom
                                     anchors.left: parent.left; anchors.right: parent.right
-                                    anchors.leftMargin: 6; anchors.rightMargin: 6; anchors.bottomMargin: 6
-                                    height: isExpanded ? Math.min(serverSubCol.implicitHeight, 184) : 0
+                                    anchors.leftMargin: 4; anchors.rightMargin: 4; anchors.bottomMargin: 6
+                                    height: isExpanded ? Math.min(serverSubCol.implicitHeight + 8, 192) : 0
                                     clip: true
                                     Behavior on height { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -1066,19 +1346,20 @@ PluginComponent {
                                     Flickable {
                                         id: serverFlickable
                                         anchors.fill: parent
-                                        anchors.leftMargin: 8
-                                        anchors.rightMargin: 14
+                                        anchors.leftMargin: 2
+                                        anchors.rightMargin: 10
                                         contentWidth: width
-                                        contentHeight: serverSubCol.implicitHeight
+                                        contentHeight: serverSubCol.implicitHeight + 4
                                         boundsBehavior: Flickable.StopAtBounds
                                         clip: true
 
                                         Column {
                                             id: serverSubCol
-                                            width: parent.width
+                                            width: Math.max(0, parent.width - 2)
+                                            anchors.horizontalCenter: parent.horizontalCenter
                                             spacing: 4
                                             topPadding: 4
-                                            bottomPadding: 4
+                                            bottomPadding: 6
 
                                             Item {
                                                 id: fastestServerItem
@@ -1133,17 +1414,17 @@ PluginComponent {
                                                     id: maFastestServer
                                                     anchors.fill: parent
                                                     hoverEnabled: true
-                                                    enabled: !root.isConnecting && !root.isDisconnecting
+                                                    enabled: !root.isDisconnecting
                                                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                                     onPressed: mouse => fastestServerRipple.trigger(mouse.x, mouse.y)
                                                     onClicked: root.connectVpn(modelData.target)
                                                 }
 
                                                 RowLayout {
-                                                    anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 6
-                                                    DankIcon { name: "bolt"; size: 16; color: Theme.primary }
-                                                    StyledText { text: "Fastest " + modelData.name + " Server"; font.pixelSize: Theme.fontSizeSmall - 1; font.weight: Font.Bold; color: Theme.primary; Layout.fillWidth: true }
-                                                    StyledText { text: "Connect"; font.pixelSize: Theme.fontSizeSmall - 2; font.weight: Font.Bold; color: Theme.primary }
+                                                    anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
+                                                    DankIcon { name: "bolt"; size: 16; color: Theme.primary; opacity: 0.85 }
+                                                    StyledText { text: "Fastest " + modelData.name + " Server"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: Theme.primary; Layout.fillWidth: true }
+                                                    StyledText { text: "Connect"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: Theme.primary }
                                                 }
                                             }
 
@@ -1202,17 +1483,17 @@ PluginComponent {
 
                                                     MouseArea {
                                                         id: maSrv; anchors.fill: parent; hoverEnabled: true
-                                                        enabled: !root.isConnecting && !root.isDisconnecting
+                                                        enabled: !root.isDisconnecting
                                                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                                         onPressed: mouse => srvRipple.trigger(mouse.x, mouse.y)
                                                         onClicked: root.connectVpn(modelData.target)
                                                     }
 
                                                     RowLayout {
-                                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 6
-                                                        DankIcon { name: "dns"; size: 14; color: Theme.surfaceText; opacity: 0.7 }
-                                                        StyledText { text: modelData.name; font.pixelSize: Theme.fontSizeSmall - 1; color: Theme.surfaceText; Layout.fillWidth: true }
-                                                        StyledText { text: "Load: " + modelData.load; font.pixelSize: Theme.fontSizeSmall - 2; font.family: "Monospace"; color: Theme.primary }
+                                                        anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
+                                                        DankIcon { name: "dns"; size: 16; color: Theme.surfaceText; opacity: 0.7; Layout.alignment: Qt.AlignVCenter }
+                                                        StyledText { text: modelData.name; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceText; Layout.fillWidth: true }
+                                                        StyledText { text: modelData.load; font.pixelSize: Theme.fontSizeSmall; font.family: "Monospace"; color: Theme.primary }
                                                     }
                                                 }
                                             }
