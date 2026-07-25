@@ -13,14 +13,14 @@
         "dankbar-widget",
         "control-center"
     ],
-    "repo": "https://github.com/YourDoritos/pVPN",
+    "repo": "https://github.com/JDKamalakar/DMS-Proton_VPN",
     "compositors": [
         "any"
     ],
     "distro": [
         "any"
     ],
-    "screenshot": "",
+    "screenshot": "https://raw.githubusercontent.com/JDKamalakar/DMS-Proton_VPN/refs/heads/main/assets/POP-Up_UI.png",
     "permissions": [
         "process",
         "settings_read",
