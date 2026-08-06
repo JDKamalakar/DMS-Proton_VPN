@@ -20,6 +20,9 @@
     "distro": [
         "any"
     ],
+    "dependencies": [
+        "pvpn"
+    ],
     "screenshot": "https://raw.githubusercontent.com/JDKamalakar/DMS-Proton_VPN/refs/heads/main/assets/POP-Up_UI.png",
     "permissions": [
         "process",
