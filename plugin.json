@@ -3,7 +3,7 @@
     "name": "Proton VPN",
     "description": "Proton VPN client using pVPN backend CLI.",
     "category": "utilities",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": "JDKamalakar",
     "icon": "vpn_key",
     "type": "widget",
