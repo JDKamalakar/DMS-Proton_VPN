@@ -1429,7 +1429,7 @@ PluginComponent {
                                             }
 
                                             Repeater {
-                                                model: modelData.servers
+                                                model: countryDelegateCard.isExpanded ? modelData.servers : null
                                                 delegate: Item {
                                                     id: serverItemRect
                                                     width: parent.width; height: 34
@@ -1441,7 +1441,7 @@ PluginComponent {
                                                     Shape {
                                                         id: srvBg
                                                         anchors.fill: parent
-                                                        property bool isLastSrv: index === modelData.servers.length - 1
+                                                        property bool isLastSrv: index === (modelData.servers ? modelData.servers.length - 1 : 0)
                                                         property real tlr: maSrv.containsMouse ? (height / 2) : 4
                                                         property real trr: maSrv.containsMouse ? (height / 2) : 4
                                                         property real blr: maSrv.containsMouse ? (height / 2) : (isLastSrv ? 8 : 4)
