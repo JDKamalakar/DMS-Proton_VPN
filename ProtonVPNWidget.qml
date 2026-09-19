@@ -1210,318 +1210,367 @@ PluginComponent {
                         }
                     }
 
-                    Column {
-                        id: countriesListCol; width: parent.width; spacing: 4
+                    Item {
+                        id: countriesScrollContainer
+                        width: parent.width
+                        // Limit visible countries before scrolling (default max height set to ~5 items + spacing, or fits content if fewer)
+                        readonly property int maxVisibleCountries: 5
+                        readonly property real singleItemHeight: 46 // 42 + 4 spacing
+                        readonly property real maxCalculatedHeight: (maxVisibleCountries * singleItemHeight) + 4
+                        height: Math.min(countriesListCol.implicitHeight + 4, maxCalculatedHeight)
+                        clip: true
 
-                        Repeater {
-                            model: root.countriesList
-                            delegate: Item {
-                                id: countryDelegateCard
-                                width: countriesListCol.width
-                                property bool isExpanded: root.expandedCountryCode === modelData.code
-                                height: 42 + (isExpanded ? (expContainer.height + 12) : 0)
-                                Behavior on height { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on height { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
-                                opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
-                                scale: maCountryHeader.pressed ? 0.98 : (maCountryHeader.containsMouse ? 1.005 : 1.0)
-                                Behavior on opacity { NumberAnimation { duration: 150 } }
-                                Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                        Flickable {
+                            id: countriesFlickable
+                            anchors.fill: parent
+                            anchors.rightMargin: countriesScrollBar.visible ? 8 : 0
+                            contentWidth: width
+                            contentHeight: countriesListCol.implicitHeight + 6
+                            boundsBehavior: Flickable.StopAtBounds
+                            clip: true
 
-                                Shape {
-                                    id: countryBg
-                                    anchors.fill: parent
+                            Column {
+                                id: countriesListCol
+                                width: parent.width
+                                spacing: 4
+                                topPadding: 2
+                                bottomPadding: 4
 
-                                    property real innerRadius: 6
-                                    property real outerRadius: 12
-                                    property bool isFirstRow: index === 0
-                                    property bool isLastRow: index === root.countriesList.length - 1
-                                    
-                                    property real tlr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isFirstRow ? outerRadius : innerRadius)
-                                    property real trr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isFirstRow ? outerRadius : innerRadius)
-                                    property real blr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isLastRow ? outerRadius : innerRadius)
-                                    property real brr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isLastRow ? outerRadius : innerRadius)
+                                Repeater {
+                                    model: root.countriesList
+                                    delegate: Item {
+                                        id: countryDelegateCard
+                                        width: countriesListCol.width
+                                        property bool isExpanded: root.expandedCountryCode === modelData.code
+                                        height: 42 + (isExpanded ? (expContainer.height + 12) : 0)
+                                        Behavior on height { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
-                                    property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                    property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                    property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                    property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                        opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
+                                        scale: maCountryHeader.pressed ? 0.98 : (maCountryHeader.containsMouse ? 1.005 : 1.0)
+                                        Behavior on opacity { NumberAnimation { duration: 150 } }
+                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
-                                    property color paintColor: isExpanded 
-                                            ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.12) 
-                                            : (maCountryHeader.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.08) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04))
-                                    
-                                    property color paintBorder: isExpanded 
-                                            ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.50) 
-                                            : (maCountryHeader.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.35) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15))
+                                        Shape {
+                                            id: countryBg
+                                            anchors.fill: parent
 
-                                    Behavior on paintColor { ColorAnimation { duration: 150 } }
-                                    Behavior on paintBorder { ColorAnimation { duration: 150 } }
+                                            property real innerRadius: 6
+                                            property real outerRadius: 12
+                                            property bool isFirstRow: index === 0
+                                            property bool isLastRow: index === root.countriesList.length - 1
+                                            
+                                            property real tlr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isFirstRow ? outerRadius : innerRadius)
+                                            property real trr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isFirstRow ? outerRadius : innerRadius)
+                                            property real blr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isLastRow ? outerRadius : innerRadius)
+                                            property real brr: (isExpanded || maCountryHeader.containsMouse) ? 21 : (isLastRow ? outerRadius : innerRadius)
 
-                                    ShapePath {
-                                        fillColor: countryBg.paintColor
-                                        strokeColor: countryBg.paintBorder
-                                        strokeWidth: 1
-                                        
-                                        startX: countryBg.tlrAnim; startY: 0
-                                        PathLine { x: countryBg.width - countryBg.trrAnim; y: 0 }
-                                        PathArc { x: countryBg.width; y: countryBg.trrAnim; radiusX: countryBg.trrAnim; radiusY: countryBg.trrAnim; direction: PathArc.Clockwise }
-                                        PathLine { x: countryBg.width; y: countryBg.height - countryBg.brrAnim }
-                                        PathArc { x: countryBg.width - countryBg.brrAnim; y: countryBg.height; radiusX: countryBg.brrAnim; radiusY: countryBg.brrAnim; direction: PathArc.Clockwise }
-                                        PathLine { x: countryBg.blrAnim; y: countryBg.height }
-                                        PathArc { x: 0; y: countryBg.height - countryBg.blrAnim; radiusX: countryBg.blrAnim; radiusY: countryBg.blrAnim; direction: PathArc.Clockwise }
-                                        PathLine { x: 0; y: countryBg.tlrAnim }
-                                        PathArc { x: countryBg.tlrAnim; y: 0; radiusX: countryBg.tlrAnim; radiusY: countryBg.tlrAnim; direction: PathArc.Clockwise }
-                                    }
-                                }
+                                            property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                            property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                            property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                            property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
 
-                                DankRipple {
-                                    id: countryRipple
-                                    anchors.fill: parent
-                                    clip: true
-                                    cornerRadius: countryBg.tlrAnim
-                                    rippleColor: Theme.primary
-                                }
+                                            property color paintColor: isExpanded 
+                                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.12) 
+                                                    : (maCountryHeader.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.08) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04))
+                                            
+                                            property color paintBorder: isExpanded 
+                                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.50) 
+                                                    : (maCountryHeader.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.35) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15))
 
-                                Item {
-                                    id: countryHeaderArea
-                                    width: parent.width; height: 42
-                                    anchors.top: parent.top
+                                            Behavior on paintColor { ColorAnimation { duration: 150 } }
+                                            Behavior on paintBorder { ColorAnimation { duration: 150 } }
 
-                                    MouseArea {
-                                        id: maCountryHeader; anchors.fill: parent; hoverEnabled: true
-                                        enabled: !root.isDisconnecting
-                                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                        onPressed: mouse => countryRipple.trigger(mouse.x, mouse.y)
-                                        onClicked: {
-                                            if (root.expandedCountryCode === modelData.code) {
-                                                root.expandedCountryCode = "";
-                                            } else {
-                                                root.expandedCountryCode = modelData.code;
+                                            ShapePath {
+                                                fillColor: countryBg.paintColor
+                                                strokeColor: countryBg.paintBorder
+                                                strokeWidth: 1
+                                                
+                                                startX: countryBg.tlrAnim; startY: 0
+                                                PathLine { x: countryBg.width - countryBg.trrAnim; y: 0 }
+                                                PathArc { x: countryBg.width; y: countryBg.trrAnim; radiusX: countryBg.trrAnim; radiusY: countryBg.trrAnim; direction: PathArc.Clockwise }
+                                                PathLine { x: countryBg.width; y: countryBg.height - countryBg.brrAnim }
+                                                PathArc { x: countryBg.width - countryBg.brrAnim; y: countryBg.height; radiusX: countryBg.brrAnim; radiusY: countryBg.brrAnim; direction: PathArc.Clockwise }
+                                                PathLine { x: countryBg.blrAnim; y: countryBg.height }
+                                                PathArc { x: 0; y: countryBg.height - countryBg.blrAnim; radiusX: countryBg.blrAnim; radiusY: countryBg.blrAnim; direction: PathArc.Clockwise }
+                                                PathLine { x: 0; y: countryBg.tlrAnim }
+                                                PathArc { x: countryBg.tlrAnim; y: 0; radiusX: countryBg.tlrAnim; radiusY: countryBg.tlrAnim; direction: PathArc.Clockwise }
                                             }
                                         }
-                                    }
 
-                                    RowLayout {
-                                        anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
+                                        DankRipple {
+                                            id: countryRipple
+                                            anchors.fill: parent
+                                            clip: true
+                                            cornerRadius: countryBg.tlrAnim
+                                            rippleColor: Theme.primary
+                                        }
 
                                         Item {
-                                            width: 16; height: 16
-                                            Layout.preferredWidth: 16
-                                            Layout.preferredHeight: 16
-                                            Layout.alignment: Qt.AlignVCenter
-                                            Text {
-                                                text: modelData.flag
-                                                font.pixelSize: 20
-                                                font.family: "Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, EmojiOne Color, Twemoji, sans-serif"
-                                                anchors.left: parent.left
-                                                anchors.verticalCenter: parent.verticalCenter
+                                            id: countryHeaderArea
+                                            width: parent.width; height: 42
+                                            anchors.top: parent.top
+
+                                            MouseArea {
+                                                id: maCountryHeader; anchors.fill: parent; hoverEnabled: true
+                                                enabled: !root.isDisconnecting
+                                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                onPressed: mouse => countryRipple.trigger(mouse.x, mouse.y)
+                                                onClicked: {
+                                                    if (root.expandedCountryCode === modelData.code) {
+                                                        root.expandedCountryCode = "";
+                                                    } else {
+                                                        root.expandedCountryCode = modelData.code;
+                                                    }
+                                                }
                                             }
-                                        }
 
-                                        StyledText { text: modelData.name; Layout.fillWidth: true; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: Theme.surfaceText; Layout.alignment: Qt.AlignVCenter }
+                                            RowLayout {
+                                                anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
 
-                                        DankIcon {
-                                            name: "expand_more"
-                                            size: 16
-                                            color: Theme.surfaceVariantText
-                                            opacity: 0.7
-                                            Layout.alignment: Qt.AlignVCenter
-                                            rotation: isExpanded ? 180 : 0
-                                            Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
-                                        }
-                                    }
-                                }
-
-                                Item {
-                                    id: expContainer
-                                    anchors.top: countryHeaderArea.bottom
-                                    anchors.left: parent.left; anchors.right: parent.right
-                                    anchors.leftMargin: 4; anchors.rightMargin: 4; anchors.bottomMargin: 6
-                                    height: isExpanded ? Math.min(serverSubCol.implicitHeight + 8, 192) : 0
-                                    clip: true
-                                    Behavior on height { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                    Behavior on opacity { NumberAnimation { duration: 150 } }
-                                    opacity: isExpanded ? 1.0 : 0.0
-
-                                    Flickable {
-                                        id: serverFlickable
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 2
-                                        anchors.rightMargin: 10
-                                        contentWidth: width
-                                        contentHeight: serverSubCol.implicitHeight + 4
-                                        boundsBehavior: Flickable.StopAtBounds
-                                        clip: true
-
-                                        Column {
-                                            id: serverSubCol
-                                            width: Math.max(0, parent.width - 2)
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            spacing: 4
-                                            topPadding: 4
-                                            bottomPadding: 6
-
-                                            Item {
-                                                id: fastestServerItem
-                                                width: parent.width; height: 38
-                                                opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
-                                                scale: maFastestServer.pressed ? 0.98 : 1.0
-                                                Behavior on opacity { NumberAnimation { duration: 150 } }
-                                                Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
-
-                                                Shape {
-                                                    id: fastestBg
-                                                    anchors.fill: parent
-                                                    property real tlr: maFastestServer.containsMouse ? (height / 2) : 8
-                                                    property real trr: maFastestServer.containsMouse ? (height / 2) : 8
-                                                    property real blr: maFastestServer.containsMouse ? (height / 2) : 4
-                                                    property real brr: maFastestServer.containsMouse ? (height / 2) : 4
-
-                                                    property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                                    property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                                    property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                                    property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-
-                                                    property color paintColor: maFastestServer.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.22) : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.12)
-                                                    property color paintBorder: Theme.primary
-                                                    Behavior on paintColor { ColorAnimation { duration: 150 } }
-
-                                                    ShapePath {
-                                                        fillColor: fastestBg.paintColor
-                                                        strokeColor: fastestBg.paintBorder
-                                                        strokeWidth: 1
-
-                                                        startX: fastestBg.tlrAnim; startY: 0
-                                                        PathLine { x: fastestBg.width - fastestBg.trrAnim; y: 0 }
-                                                        PathArc { x: fastestBg.width; y: fastestBg.trrAnim; radiusX: fastestBg.trrAnim; radiusY: fastestBg.trrAnim; direction: PathArc.Clockwise }
-                                                        PathLine { x: fastestBg.width; y: fastestBg.height - fastestBg.brrAnim }
-                                                        PathArc { x: fastestBg.width - fastestBg.brrAnim; y: fastestBg.height; radiusX: fastestBg.brrAnim; radiusY: fastestBg.brrAnim; direction: PathArc.Clockwise }
-                                                        PathLine { x: fastestBg.blrAnim; y: fastestBg.height }
-                                                        PathArc { x: 0; y: fastestBg.height - fastestBg.blrAnim; radiusX: fastestBg.blrAnim; radiusY: fastestBg.blrAnim; direction: PathArc.Clockwise }
-                                                        PathLine { x: 0; y: fastestBg.tlrAnim }
-                                                        PathArc { x: fastestBg.tlrAnim; y: 0; radiusX: fastestBg.tlrAnim; radiusY: fastestBg.tlrAnim; direction: PathArc.Clockwise }
+                                                Item {
+                                                    width: 16; height: 16
+                                                    Layout.preferredWidth: 16
+                                                    Layout.preferredHeight: 16
+                                                    Layout.alignment: Qt.AlignVCenter
+                                                    Text {
+                                                        text: modelData.flag
+                                                        font.pixelSize: 20
+                                                        font.family: "Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, EmojiOne Color, Twemoji, sans-serif"
+                                                        anchors.left: parent.left
+                                                        anchors.verticalCenter: parent.verticalCenter
                                                     }
                                                 }
 
-                                                DankRipple {
-                                                    id: fastestServerRipple
-                                                    anchors.fill: parent
-                                                    cornerRadius: fastestBg.tlrAnim
-                                                    rippleColor: Theme.primary
-                                                }
+                                                StyledText { text: modelData.name; Layout.fillWidth: true; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: Theme.surfaceText; Layout.alignment: Qt.AlignVCenter }
 
-                                                MouseArea {
-                                                    id: maFastestServer
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    enabled: !root.isDisconnecting
-                                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                                    onPressed: mouse => fastestServerRipple.trigger(mouse.x, mouse.y)
-                                                    onClicked: root.connectVpn(modelData.target)
-                                                }
-
-                                                RowLayout {
-                                                    anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
-                                                    DankIcon { name: "bolt"; size: 16; color: Theme.primary; opacity: 0.85 }
-                                                    StyledText { text: "Fastest " + modelData.name + " Server"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: Theme.primary; Layout.fillWidth: true }
-                                                    StyledText { text: "Connect"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: Theme.primary }
+                                                DankIcon {
+                                                    name: "expand_more"
+                                                    size: 16
+                                                    color: Theme.surfaceVariantText
+                                                    opacity: 0.7
+                                                    Layout.alignment: Qt.AlignVCenter
+                                                    rotation: isExpanded ? 180 : 0
+                                                    Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
                                                 }
                                             }
+                                        }
 
-                                            Repeater {
-                                                model: countryDelegateCard.isExpanded ? modelData.servers : null
-                                                delegate: Item {
-                                                    id: serverItemRect
-                                                    width: parent.width; height: 34
-                                                    opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
-                                                    scale: maSrv.pressed ? 0.98 : 1.0
-                                                    Behavior on opacity { NumberAnimation { duration: 150 } }
-                                                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                        Item {
+                                            id: expContainer
+                                            anchors.top: countryHeaderArea.bottom
+                                            anchors.left: parent.left; anchors.right: parent.right
+                                            anchors.leftMargin: 4; anchors.rightMargin: 4; anchors.bottomMargin: 6
+                                            height: isExpanded ? Math.min(serverSubCol.implicitHeight + 8, 192) : 0
+                                            clip: true
+                                            Behavior on height { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                                            opacity: isExpanded ? 1.0 : 0.0
 
-                                                    Shape {
-                                                        id: srvBg
-                                                        anchors.fill: parent
-                                                        property bool isLastSrv: index === (modelData.servers ? modelData.servers.length - 1 : 0)
-                                                        property real tlr: maSrv.containsMouse ? (height / 2) : 4
-                                                        property real trr: maSrv.containsMouse ? (height / 2) : 4
-                                                        property real blr: maSrv.containsMouse ? (height / 2) : (isLastSrv ? 8 : 4)
-                                                        property real brr: maSrv.containsMouse ? (height / 2) : (isLastSrv ? 8 : 4)
+                                            Flickable {
+                                                id: serverFlickable
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 2
+                                                anchors.rightMargin: 10
+                                                contentWidth: width
+                                                contentHeight: serverSubCol.implicitHeight + 4
+                                                boundsBehavior: Flickable.StopAtBounds
+                                                clip: true
 
-                                                        property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                                        property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                                        property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                                        property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                                Column {
+                                                    id: serverSubCol
+                                                    width: Math.max(0, parent.width - 2)
+                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                    spacing: 4
+                                                    topPadding: 4
+                                                    bottomPadding: 6
 
-                                                        property color paintColor: maSrv.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04)
-                                                        property color paintBorder: maSrv.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.40) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15)
-                                                        Behavior on paintColor { ColorAnimation { duration: 150 } }
-                                                        Behavior on paintBorder { ColorAnimation { duration: 150 } }
+                                                    Item {
+                                                        id: fastestServerItem
+                                                        width: parent.width; height: 38
+                                                        opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
+                                                        scale: maFastestServer.pressed ? 0.98 : 1.0
+                                                        Behavior on opacity { NumberAnimation { duration: 150 } }
+                                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
-                                                        ShapePath {
-                                                            fillColor: srvBg.paintColor
-                                                            strokeColor: srvBg.paintBorder
-                                                            strokeWidth: 1
+                                                        Shape {
+                                                            id: fastestBg
+                                                            anchors.fill: parent
+                                                            property real tlr: maFastestServer.containsMouse ? (height / 2) : 8
+                                                            property real trr: maFastestServer.containsMouse ? (height / 2) : 8
+                                                            property real blr: maFastestServer.containsMouse ? (height / 2) : 4
+                                                            property real brr: maFastestServer.containsMouse ? (height / 2) : 4
 
-                                                            startX: srvBg.tlrAnim; startY: 0
-                                                            PathLine { x: srvBg.width - srvBg.trrAnim; y: 0 }
-                                                            PathArc { x: srvBg.width; y: srvBg.trrAnim; radiusX: srvBg.trrAnim; radiusY: srvBg.trrAnim; direction: PathArc.Clockwise }
-                                                            PathLine { x: srvBg.width; y: srvBg.height - srvBg.brrAnim }
-                                                            PathArc { x: srvBg.width - srvBg.brrAnim; y: srvBg.height; radiusX: srvBg.brrAnim; radiusY: srvBg.brrAnim; direction: PathArc.Clockwise }
-                                                            PathLine { x: srvBg.blrAnim; y: srvBg.height }
-                                                            PathArc { x: 0; y: srvBg.height - srvBg.blrAnim; radiusX: srvBg.blrAnim; radiusY: srvBg.blrAnim; direction: PathArc.Clockwise }
-                                                            PathLine { x: 0; y: srvBg.tlrAnim }
-                                                            PathArc { x: srvBg.tlrAnim; y: 0; radiusX: srvBg.tlrAnim; radiusY: srvBg.tlrAnim; direction: PathArc.Clockwise }
+                                                            property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                                            property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                                            property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                                            property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+
+                                                            property color paintColor: maFastestServer.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.22) : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.12)
+                                                            property color paintBorder: Theme.primary
+                                                            Behavior on paintColor { ColorAnimation { duration: 150 } }
+
+                                                            ShapePath {
+                                                                fillColor: fastestBg.paintColor
+                                                                strokeColor: fastestBg.paintBorder
+                                                                strokeWidth: 1
+
+                                                                startX: fastestBg.tlrAnim; startY: 0
+                                                                PathLine { x: fastestBg.width - fastestBg.trrAnim; y: 0 }
+                                                                PathArc { x: fastestBg.width; y: fastestBg.trrAnim; radiusX: fastestBg.trrAnim; radiusY: fastestBg.trrAnim; direction: PathArc.Clockwise }
+                                                                PathLine { x: fastestBg.width; y: fastestBg.height - fastestBg.brrAnim }
+                                                                PathArc { x: fastestBg.width - fastestBg.brrAnim; y: fastestBg.height; radiusX: fastestBg.brrAnim; radiusY: fastestBg.brrAnim; direction: PathArc.Clockwise }
+                                                                PathLine { x: fastestBg.blrAnim; y: fastestBg.height }
+                                                                PathArc { x: 0; y: fastestBg.height - fastestBg.blrAnim; radiusX: fastestBg.blrAnim; radiusY: fastestBg.blrAnim; direction: PathArc.Clockwise }
+                                                                PathLine { x: 0; y: fastestBg.tlrAnim }
+                                                                PathArc { x: fastestBg.tlrAnim; y: 0; radiusX: fastestBg.tlrAnim; radiusY: fastestBg.tlrAnim; direction: PathArc.Clockwise }
+                                                            }
+                                                        }
+
+                                                        DankRipple {
+                                                            id: fastestServerRipple
+                                                            anchors.fill: parent
+                                                            cornerRadius: fastestBg.tlrAnim
+                                                            rippleColor: Theme.primary
+                                                        }
+
+                                                        MouseArea {
+                                                            id: maFastestServer
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            enabled: !root.isDisconnecting
+                                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                            onPressed: mouse => fastestServerRipple.trigger(mouse.x, mouse.y)
+                                                            onClicked: root.connectVpn(modelData.target)
+                                                        }
+
+                                                        RowLayout {
+                                                            anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
+                                                            DankIcon { name: "bolt"; size: 16; color: Theme.primary; opacity: 0.85 }
+                                                            StyledText { text: "Fastest " + modelData.name + " Server"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: Theme.primary; Layout.fillWidth: true }
+                                                            StyledText { text: "Connect"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Normal; color: Theme.primary }
                                                         }
                                                     }
 
-                                                    DankRipple {
-                                                        id: srvRipple
-                                                        anchors.fill: parent
-                                                        cornerRadius: srvBg.tlrAnim
-                                                        rippleColor: Theme.primary
-                                                    }
+                                                    Repeater {
+                                                        model: countryDelegateCard.isExpanded ? modelData.servers : null
+                                                        delegate: Item {
+                                                            id: serverItemRect
+                                                            width: parent.width; height: 34
+                                                            opacity: (root.isConnecting || root.isDisconnecting) ? 0.4 : 1.0
+                                                            scale: maSrv.pressed ? 0.98 : 1.0
+                                                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                                                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
-                                                    MouseArea {
-                                                        id: maSrv; anchors.fill: parent; hoverEnabled: true
-                                                        enabled: !root.isDisconnecting
-                                                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                                        onPressed: mouse => srvRipple.trigger(mouse.x, mouse.y)
-                                                        onClicked: root.connectVpn(modelData.target)
-                                                    }
+                                                            Shape {
+                                                                id: srvBg
+                                                                anchors.fill: parent
+                                                                property bool isLastSrv: index === (modelData.servers ? modelData.servers.length - 1 : 0)
+                                                                property real tlr: maSrv.containsMouse ? (height / 2) : 4
+                                                                property real trr: maSrv.containsMouse ? (height / 2) : 4
+                                                                property real blr: maSrv.containsMouse ? (height / 2) : (isLastSrv ? 8 : 4)
+                                                                property real brr: maSrv.containsMouse ? (height / 2) : (isLastSrv ? 8 : 4)
 
-                                                    RowLayout {
-                                                        anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
-                                                        DankIcon { name: "dns"; size: 16; color: Theme.surfaceText; opacity: 0.7; Layout.alignment: Qt.AlignVCenter }
-                                                        StyledText { text: modelData.name; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceText; Layout.fillWidth: true }
-                                                        StyledText { text: modelData.load; font.pixelSize: Theme.fontSizeSmall; font.family: "Monospace"; color: Theme.primary }
+                                                                property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                                                property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                                                property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                                                property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+
+                                                                property color paintColor: maSrv.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04)
+                                                                property color paintBorder: maSrv.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.40) : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15)
+                                                                Behavior on paintColor { ColorAnimation { duration: 150 } }
+                                                                Behavior on paintBorder { ColorAnimation { duration: 150 } }
+
+                                                                ShapePath {
+                                                                    fillColor: srvBg.paintColor
+                                                                    strokeColor: srvBg.paintBorder
+                                                                    strokeWidth: 1
+
+                                                                    startX: srvBg.tlrAnim; startY: 0
+                                                                    PathLine { x: srvBg.width - srvBg.trrAnim; y: 0 }
+                                                                    PathArc { x: srvBg.width; y: srvBg.trrAnim; radiusX: srvBg.trrAnim; radiusY: srvBg.trrAnim; direction: PathArc.Clockwise }
+                                                                    PathLine { x: srvBg.width; y: srvBg.height - srvBg.brrAnim }
+                                                                    PathArc { x: srvBg.width - srvBg.brrAnim; y: srvBg.height; radiusX: srvBg.brrAnim; radiusY: srvBg.brrAnim; direction: PathArc.Clockwise }
+                                                                    PathLine { x: srvBg.blrAnim; y: srvBg.height }
+                                                                    PathArc { x: 0; y: srvBg.height - srvBg.blrAnim; radiusX: srvBg.blrAnim; radiusY: srvBg.blrAnim; direction: PathArc.Clockwise }
+                                                                    PathLine { x: 0; y: srvBg.tlrAnim }
+                                                                    PathArc { x: srvBg.tlrAnim; y: 0; radiusX: srvBg.tlrAnim; radiusY: srvBg.tlrAnim; direction: PathArc.Clockwise }
+                                                                }
+                                                            }
+
+                                                            DankRipple {
+                                                                id: srvRipple
+                                                                anchors.fill: parent
+                                                                cornerRadius: srvBg.tlrAnim
+                                                                rippleColor: Theme.primary
+                                                            }
+
+                                                            MouseArea {
+                                                                id: maSrv; anchors.fill: parent; hoverEnabled: true
+                                                                enabled: !root.isDisconnecting
+                                                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                                onPressed: mouse => srvRipple.trigger(mouse.x, mouse.y)
+                                                                onClicked: root.connectVpn(modelData.target)
+                                                            }
+
+                                                            RowLayout {
+                                                                anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
+                                                                DankIcon { name: "dns"; size: 16; color: Theme.surfaceText; opacity: 0.7; Layout.alignment: Qt.AlignVCenter }
+                                                                StyledText { text: modelData.name; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceText; Layout.fillWidth: true }
+                                                                StyledText { text: modelData.load; font.pixelSize: Theme.fontSizeSmall; font.family: "Monospace"; color: Theme.primary }
+                                                            }
+                                                        }
                                                     }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                id: srvScrollBar
+                                                anchors.right: parent.right
+                                                anchors.rightMargin: 1
+                                                anchors.top: parent.top
+                                                anchors.topMargin: 4
+                                                anchors.bottom: parent.bottom
+                                                anchors.bottomMargin: 4
+                                                width: 3
+                                                radius: 1.5
+                                                color: Qt.rgba(Theme.surfaceText.r, Theme.surfaceText.g, Theme.surfaceText.b, 0.12)
+                                                visible: serverFlickable.contentHeight > serverFlickable.height
+
+                                                Rectangle {
+                                                    width: parent.width
+                                                    height: Math.max(16, (serverFlickable.visibleArea.heightRatio) * parent.height)
+                                                    y: serverFlickable.visibleArea.yPosition * parent.height
+                                                    radius: 1.5
+                                                    color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.6)
                                                 }
                                             }
                                         }
                                     }
-
-                                    Rectangle {
-                                        id: srvScrollBar
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: 1
-                                        anchors.top: parent.top
-                                        anchors.topMargin: 4
-                                        anchors.bottom: parent.bottom
-                                        anchors.bottomMargin: 4
-                                        width: 3
-                                        radius: 1.5
-                                        color: Qt.rgba(Theme.surfaceText.r, Theme.surfaceText.g, Theme.surfaceText.b, 0.12)
-                                        visible: serverFlickable.contentHeight > serverFlickable.height
-
-                                        Rectangle {
-                                            width: parent.width
-                                            height: Math.max(16, (serverFlickable.visibleArea.heightRatio) * parent.height)
-                                            y: serverFlickable.visibleArea.yPosition * parent.height
-                                            radius: 1.5
-                                            color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.6)
-                                        }
-                                    }
                                 }
+                            }
+                        }
+
+                        Rectangle {
+                            id: countriesScrollBar
+                            anchors.right: parent.right
+                            anchors.rightMargin: 1
+                            anchors.top: parent.top
+                            anchors.topMargin: 2
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 2
+                            width: 3
+                            radius: 1.5
+                            color: Qt.rgba(Theme.surfaceText.r, Theme.surfaceText.g, Theme.surfaceText.b, 0.12)
+                            visible: countriesFlickable.contentHeight > countriesFlickable.height
+
+                            Rectangle {
+                                width: parent.width
+                                height: Math.max(16, (countriesFlickable.visibleArea.heightRatio) * parent.height)
+                                y: countriesFlickable.visibleArea.yPosition * parent.height
+                                radius: 1.5
+                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.6)
                             }
                         }
                     }
