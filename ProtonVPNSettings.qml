@@ -111,13 +111,23 @@ PluginSettings {
         }
     }
 
+    readonly property real outerR: Theme.cornerRadius || 12
+    readonly property real innerR: 4
+
     function loadValue(key, def) {
-        return PluginService.loadPluginData(root.pluginId, key, def);
+        if (typeof PluginService !== "undefined" && PluginService && PluginService.loadPluginData) {
+            return PluginService.loadPluginData(root.pluginId, key, def);
+        }
+        return def;
     }
 
     function saveValue(key, val) {
-        PluginService.savePluginData(root.pluginId, key, val);
-        PluginService.setGlobalVar(root.pluginId, key, val);
+        if (typeof PluginService !== "undefined" && PluginService && PluginService.savePluginData) {
+            PluginService.savePluginData(root.pluginId, key, val);
+            if (PluginService.setGlobalVar) {
+                PluginService.setGlobalVar(root.pluginId, key, val);
+            }
+        }
     }
 
     function loadAll() {
@@ -133,625 +143,550 @@ PluginSettings {
 
     Component.onCompleted: loadAll()
 
+    onPluginServiceChanged: {
+        if (pluginService) {
+            loadAll();
+        }
+    }
+
+    Connections {
+        target: PluginService
+        ignoreUnknownSignals: true
+        function onPluginDataChanged(pId) {
+            if (pId === root.pluginId) {
+                root.loadAll();
+            }
+        }
+        function onGlobalVarChanged(pId, varName) {
+            if (pId === root.pluginId) {
+                root.loadAll();
+            }
+        }
+    }
+
     Column {
         id: mainSettingsCol
         width: parent.width
         spacing: Theme.spacingL
 
-        // ── About & Plugin Info Card ───────────────────────────
-        StyledRect {
+        // --- General Settings Section ---
+        Column {
             width: parent.width
-            radius: Theme.cornerRadius
-            color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.65)
-            border.width: 1
-            border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
-            implicitHeight: aboutCol.implicitHeight + Theme.spacingM * 2
+            spacing: Theme.spacingS
 
-            ColumnLayout {
-                id: aboutCol
-                anchors.fill: parent
-                anchors.margins: Theme.spacingM
-                spacing: Theme.spacingM
+            Row {
+                spacing: Theme.spacingXS
+                leftPadding: Theme.spacingM
+                DankIcon {
+                    name: "tune"
+                    size: 16
+                    color: Theme.primary
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                StyledText {
+                    text: "General Preferences"
+                    font.pixelSize: Theme.fontSizeSmall
+                    font.weight: Font.DemiBold
+                    color: Theme.primary
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.spacingM
+            Column {
+                id: prefColumn
+                width: parent.width
+                spacing: 2
 
-                    Rectangle {
-                        Layout.preferredWidth: 44
-                        Layout.preferredHeight: 44
-                        radius: Theme.cornerRadius
-                        color: Theme.withAlpha(Theme.primary, 0.10)
-                        border.width: 1
-                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
+                // 1. Connection Protocol (First)
+                Rectangle {
+                    width: parent.width
+                    height: protoCol.implicitHeight + Theme.spacingM * 2
 
-                        Image {
-                            anchors.fill: parent
-                            anchors.margins: 4
-                            source: Qt.resolvedUrl("assets/icons/Proton-VPN.svg")
-                            sourceSize.width: 80
-                            sourceSize.height: 80
-                            fillMode: Image.PreserveAspectFit
-                            asynchronous: true
-                        }
-                    }
+                    topLeftRadius: root.outerR
+                    topRightRadius: root.outerR
+                    bottomLeftRadius: root.innerR
+                    bottomRightRadius: root.innerR
+
+                    color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                    border.width: 1
+                    border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
                     ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        StyledText {
-                            text: "Proton VPN"
-                            font.pixelSize: Theme.fontSizeMedium
-                            font.weight: Font.DemiBold
-                            color: Theme.surfaceText
-                        }
-
-                        StyledText {
-                            text: "Secure, high-speed Swiss VPN client powered by pvpn-cli"
-                            font.pixelSize: Theme.fontSizeSmall - 1
-                            color: Theme.surfaceVariantText
-                        }
-                    }
-                }
-
-                StyledText {
-                    Layout.fillWidth: true
-                    text: "Configure connection protocols, default quick-connect actions, and interface visibility toggles for the DankBar widget and Control Center module."
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: Theme.surfaceVariantText
-                    wrapMode: Text.WordWrap
-                }
-            }
-        }
-
-        // ── Settings Cards Stack ───────────────────────────────
-        Column {
-            id: prefColumn
-            width: parent.width
-            spacing: 2
-
-            // 1. Connection Protocol (First)
-            Rectangle {
-                width: parent.width
-                height: protoCol.implicitHeight + Theme.spacingM * 2
-                readonly property bool isFirst: true
-                readonly property bool isLast: false
-                readonly property real outerR: Theme.cornerRadius
-                readonly property real innerR: 4
-
-                topLeftRadius: isFirst ? outerR : innerR
-                topRightRadius: isFirst ? outerR : innerR
-                bottomLeftRadius: isLast ? outerR : innerR
-                bottomRightRadius: isLast ? outerR : innerR
-
-                color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
-                border.width: 1
-                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
-
-                ColumnLayout {
-                    id: protoCol
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: Theme.spacingM
-                    anchors.rightMargin: Theme.spacingM
-                    spacing: Theme.spacingS
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacingM
-
-                        DankIcon {
-                            name: "vpn_key"
-                            size: 20
-                            color: Theme.primary
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-
-                            StyledText {
-                                text: "Connection Protocol"
-                                font.pixelSize: Theme.fontSizeMedium
-                                font.weight: Font.Medium
-                                color: Theme.surfaceText
-                            }
-
-                            StyledText {
-                                Layout.fillWidth: true
-                                text: "Preferred backend protocol passed directly via --protocol flag on connect."
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: Theme.surfaceVariantText
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-                    }
-
-                    DankDropdown {
-                        id: protoDropdown
-                        readonly property var protoMap: ({
-                            "Smart": "smart",
-                            "WireGuard": "wireguard",
-                            "Stealth": "stealth"
-                        })
-
-                        Layout.fillWidth: true
-                        compactMode: true
-                        dropdownWidth: parent.width
-                        options: ["Smart", "WireGuard", "Stealth"]
-                        currentValue: {
-                            const p = root.defaultProtocol;
-                            for (const label in protoMap) {
-                                if (protoMap[label] === p) return label;
-                            }
-                            return "Smart";
-                        }
-                        onValueChanged: value => {
-                            for (const label in protoMap) {
-                                if (label === value) {
-                                    root.defaultProtocol = protoMap[label];
-                                    root.saveValue("defaultProtocol", protoMap[label]);
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 2. Quick Connect Action Target (Middle)
-            Rectangle {
-                width: parent.width
-                height: targetCol.implicitHeight + Theme.spacingM * 2
-                readonly property bool isFirst: false
-                readonly property bool isLast: false
-                readonly property real outerR: Theme.cornerRadius
-                readonly property real innerR: 4
-
-                topLeftRadius: isFirst ? outerR : innerR
-                topRightRadius: isFirst ? outerR : innerR
-                bottomLeftRadius: isLast ? outerR : innerR
-                bottomRightRadius: isLast ? outerR : innerR
-
-                color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
-                border.width: 1
-                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
-
-                ColumnLayout {
-                    id: targetCol
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: Theme.spacingM
-                    anchors.rightMargin: Theme.spacingM
-                    spacing: Theme.spacingS
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacingM
-
-                        DankIcon {
-                            name: "flash_on"
-                            size: 20
-                            color: Theme.primary
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-
-                            StyledText {
-                                text: "Quick Connect Action"
-                                font.pixelSize: Theme.fontSizeMedium
-                                font.weight: Font.Medium
-                                color: Theme.surfaceText
-                            }
-
-                            StyledText {
-                                Layout.fillWidth: true
-                                text: "Action executed when clicking the Quick Connect button or the Control Center tile action."
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: Theme.surfaceVariantText
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-                    }
-
-                    DankDropdown {
-                        id: targetTypeDropdown
-                        readonly property var targetMap: ({
-                            "Fastest Server": "fastest",
-                            "Fastest Selected Country's Server": "country_fastest",
-                            "Custom Server": "custom"
-                        })
-
-                        Layout.fillWidth: true
-                        compactMode: true
-                        dropdownWidth: parent.width
-                        options: ["Fastest Server", "Fastest Selected Country's Server", "Custom Server"]
-                        currentValue: {
-                            const t = root.quickConnectType;
-                            for (const label in targetMap) {
-                                if (targetMap[label] === t) return label;
-                            }
-                            return "Fastest Server";
-                        }
-                        onValueChanged: value => {
-                            for (const label in targetMap) {
-                                if (label === value) {
-                                    root.quickConnectType = targetMap[label];
-                                    root.saveValue("quickConnectType", targetMap[label]);
-                                    return;
-                                }
-                            }
-                        }
-                    }
-
-                    // Sub-Option 1: Country selection for "country_fastest"
-                    RowLayout {
-                        Layout.fillWidth: true
+                        id: protoCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: Theme.spacingM
+                        anchors.rightMargin: Theme.spacingM
                         spacing: Theme.spacingS
-                        visible: root.quickConnectType === "country_fastest"
 
-                        StyledText {
-                            text: "Country:"
-                            font.pixelSize: Theme.fontSizeSmall
-                            color: Theme.surfaceText
-                            Layout.alignment: Qt.AlignVCenter
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spacingM
+
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                                Layout.alignment: Qt.AlignVCenter
+
+                                DankIcon {
+                                    name: "vpn_key"
+                                    size: 18
+                                    color: Theme.primary
+                                    anchors.centerIn: parent
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                StyledText {
+                                    text: "Connection Protocol"
+                                    font.pixelSize: Theme.fontSizeMedium
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+
+                                StyledText {
+                                    Layout.fillWidth: true
+                                    text: "Preferred backend protocol passed directly via --protocol flag on connect."
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
                         }
 
-                        ComboBox {
-                            id: countryCombo
+                        DankDropdown {
+                            id: protoDropdown
+                            readonly property var protoMap: ({
+                                "Smart": "smart",
+                                "WireGuard": "wireguard",
+                                "Stealth": "stealth"
+                            })
+
                             Layout.fillWidth: true
-                            model: root.countryOptions.map(c => c.name + " (" + c.code + ")")
-                            
-                            currentIndex: {
-                                for (let i = 0; i < root.countryOptions.length; i++) {
-                                    if (root.countryOptions[i].code === root.quickConnectCountry) return i;
+                            compactMode: true
+                            dropdownWidth: parent.width
+                            options: ["Smart", "WireGuard", "Stealth"]
+                            currentValue: {
+                                const p = root.defaultProtocol;
+                                for (const label in protoMap) {
+                                    if (protoMap[label] === p) return label;
                                 }
-                                return 0;
+                                return "Smart";
                             }
-
-                            onActivated: function(index) {
-                                let code = root.countryOptions[index].code;
-                                root.quickConnectCountry = code;
-                                root.saveValue("quickConnectCountry", code);
-                            }
-
-                            contentItem: StyledText {
-                                leftPadding: Theme.spacingS
-                                rightPadding: countryCombo.indicator ? countryCombo.indicator.width + countryCombo.spacing : Theme.spacingM
-                                text: countryCombo.displayText
-                                color: Theme.surfaceText
-                                font.pixelSize: Theme.fontSizeMedium
-                                verticalAlignment: Text.AlignVCenter
-                            }
-
-                            background: Rectangle {
-                                implicitWidth: 120
-                                implicitHeight: 40
-                                border.color: countryCombo.pressed ? Theme.primary : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.20)
-                                border.width: countryCombo.visualFocus ? 2 : 1
-                                color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                                radius: Theme.cornerRadius
-                            }
-
-                            popup: Popup {
-                                id: countryPopup
-                                y: countryCombo.height + 4
-                                width: countryCombo.width
-                                implicitHeight: Math.min(260, popupCol.implicitHeight + 16)
-                                padding: 6
-
-                                onOpened: {
-                                    countrySearchInput.forceActiveFocus();
-                                }
-
-                                onClosed: {
-                                    countrySearchInput.text = "";
-                                }
-
-                                contentItem: ColumnLayout {
-                                    id: popupCol
-                                    spacing: Theme.spacingS
-
-                                    DankTextField {
-                                        id: countrySearchInput
-                                        Layout.fillWidth: true
-                                        placeholderText: "Search country..."
-                                        focus: true
-                                    }
-
-                                    ListView {
-                                        id: countryListView
-                                        Layout.fillWidth: true
-                                        implicitHeight: Math.min(180, contentHeight)
-                                        clip: true
-
-                                        model: {
-                                            let q = countrySearchInput.text.trim().toLowerCase();
-                                            let list = root.countryOptions;
-                                            if (q) {
-                                                list = list.filter(c => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q));
-                                            }
-                                            return list;
-                                        }
-
-                                        delegate: ItemDelegate {
-                                            width: countryListView.width
-                                            contentItem: StyledText {
-                                                text: modelData.name + " (" + modelData.code + ")"
-                                                color: highlighted ? Theme.primary : Theme.surfaceText
-                                                font.pixelSize: Theme.fontSizeMedium
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-                                            background: Rectangle {
-                                                color: highlighted ? Theme.withAlpha(Theme.primary, 0.1) : "transparent"
-                                                radius: 4
-                                            }
-                                            onClicked: {
-                                                let code = modelData.code;
-                                                root.quickConnectCountry = code;
-                                                root.saveValue("quickConnectCountry", code);
-                                                countryPopup.close();
-                                            }
-                                        }
-
-                                        ScrollIndicator.vertical: ScrollIndicator { }
+                            onValueChanged: value => {
+                                for (const label in protoMap) {
+                                    if (label === value) {
+                                        root.defaultProtocol = protoMap[label];
+                                        root.saveValue("defaultProtocol", protoMap[label]);
+                                        return;
                                     }
                                 }
-
-                                background: Rectangle {
-                                    color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                                    border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25)
-                                    border.width: 1
-                                    radius: Theme.cornerRadius
-                                }
                             }
                         }
                     }
+                }
 
-                    // Sub-Option 2: Custom Server text input for "custom"
-                    RowLayout {
-                        Layout.fillWidth: true
+                // 2. Quick Connect Action Target (Middle)
+                Rectangle {
+                    width: parent.width
+                    height: targetCol.implicitHeight + Theme.spacingM * 2
+
+                    topLeftRadius: root.innerR
+                    topRightRadius: root.innerR
+                    bottomLeftRadius: root.innerR
+                    bottomRightRadius: root.innerR
+
+                    color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                    border.width: 1
+                    border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
+
+                    ColumnLayout {
+                        id: targetCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: Theme.spacingM
+                        anchors.rightMargin: Theme.spacingM
                         spacing: Theme.spacingS
-                        visible: root.quickConnectType === "custom"
 
-                        DankTextField {
-                            id: customServerField
+                        RowLayout {
                             Layout.fillWidth: true
-                            text: root.quickConnectCustom
-                            placeholderText: "e.g. US-NY#1 or NL-FREE#1"
-                            onEditingFinished: {
-                                let val = customServerField.text.trim();
-                                root.quickConnectCustom = val;
-                                root.saveValue("quickConnectCustom", val);
+                            spacing: Theme.spacingM
+
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                                Layout.alignment: Qt.AlignVCenter
+
+                                DankIcon {
+                                    name: "flash_on"
+                                    size: 18
+                                    color: Theme.primary
+                                    anchors.centerIn: parent
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                StyledText {
+                                    text: "Quick Connect Action"
+                                    font.pixelSize: Theme.fontSizeMedium
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+
+                                StyledText {
+                                    Layout.fillWidth: true
+                                    text: "Action executed when clicking the Quick Connect button or the Control Center tile action."
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    wrapMode: Text.WordWrap
+                                }
                             }
                         }
 
-                        Rectangle {
-                            width: 80
-                            height: 36
-                            radius: Theme.cornerRadius
-                            color: Theme.primary
-                            
+                        DankDropdown {
+                            id: targetTypeDropdown
+                            readonly property var targetMap: ({
+                                "Fastest Server": "fastest",
+                                "Fastest Selected Country's Server": "country_fastest",
+                                "Custom Server": "custom"
+                            })
+
+                            Layout.fillWidth: true
+                            compactMode: true
+                            dropdownWidth: parent.width
+                            options: ["Fastest Server", "Fastest Selected Country's Server", "Custom Server"]
+                            currentValue: {
+                                const t = root.quickConnectType;
+                                for (const label in targetMap) {
+                                    if (targetMap[label] === t) return label;
+                                }
+                                return "Fastest Server";
+                            }
+                            onValueChanged: value => {
+                                for (const label in targetMap) {
+                                    if (label === value) {
+                                        root.quickConnectType = targetMap[label];
+                                        root.saveValue("quickConnectType", targetMap[label]);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Sub-Option 1: Country selection for "country_fastest"
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spacingS
+                            visible: root.quickConnectType === "country_fastest"
+
                             StyledText {
-                                text: "Save"
-                                anchors.centerIn: parent
+                                text: "Country:"
                                 font.pixelSize: Theme.fontSizeSmall
-                                font.weight: Font.Bold
-                                color: Theme.surface
+                                color: Theme.surfaceText
+                                Layout.alignment: Qt.AlignVCenter
                             }
 
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
+                            DankDropdown {
+                                id: countryDropdown
+                                Layout.fillWidth: true
+                                compactMode: true
+                                dropdownWidth: parent.width
+                                options: root.countryOptions.map(c => c.name + " (" + c.code + ")")
+                                currentValue: {
+                                    for (let i = 0; i < root.countryOptions.length; i++) {
+                                        if (root.countryOptions[i].code === root.quickConnectCountry) {
+                                            return root.countryOptions[i].name + " (" + root.countryOptions[i].code + ")";
+                                        }
+                                    }
+                                    return root.countryOptions.length > 0 ? (root.countryOptions[0].name + " (" + root.countryOptions[0].code + ")") : "";
+                                }
+                                onValueChanged: value => {
+                                    for (let i = 0; i < root.countryOptions.length; i++) {
+                                        let label = root.countryOptions[i].name + " (" + root.countryOptions[i].code + ")";
+                                        if (label === value) {
+                                            let code = root.countryOptions[i].code;
+                                            root.quickConnectCountry = code;
+                                            root.saveValue("quickConnectCountry", code);
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Sub-Option 2: Custom Server text input for "custom"
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spacingS
+                            visible: root.quickConnectType === "custom"
+
+                            DankTextField {
+                                id: customServerField
+                                Layout.fillWidth: true
+                                text: root.quickConnectCustom
+                                placeholderText: "e.g. US-NY#1 or NL-FREE#1"
+                                onEditingFinished: {
                                     let val = customServerField.text.trim();
                                     root.quickConnectCustom = val;
                                     root.saveValue("quickConnectCustom", val);
                                 }
                             }
+
+                            Rectangle {
+                                width: 80
+                                height: 36
+                                radius: Theme.cornerRadius
+                                color: Theme.primary
+                                
+                                StyledText {
+                                    text: "Save"
+                                    anchors.centerIn: parent
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    font.weight: Font.Bold
+                                    color: Theme.surface
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        let val = customServerField.text.trim();
+                                        root.quickConnectCustom = val;
+                                        root.saveValue("quickConnectCustom", val);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-            }
 
-            // 3. Show Countries & Server List (Middle)
-            Rectangle {
-                width: parent.width
-                height: connRow.implicitHeight + Theme.spacingM * 2
-                readonly property bool isFirst: false
-                readonly property bool isLast: false
-                readonly property real outerR: Theme.cornerRadius
-                readonly property real innerR: 4
+                // 3. Show Countries & Server List (Middle)
+                Rectangle {
+                    width: parent.width
+                    height: connRow.implicitHeight + Theme.spacingM * 2
 
-                topLeftRadius: isFirst ? outerR : innerR
-                topRightRadius: isFirst ? outerR : innerR
-                bottomLeftRadius: isLast ? outerR : innerR
-                bottomRightRadius: isLast ? outerR : innerR
+                    topLeftRadius: root.innerR
+                    topRightRadius: root.innerR
+                    bottomLeftRadius: root.innerR
+                    bottomRightRadius: root.innerR
 
-                color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
-                border.width: 1
-                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
+                    color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                    border.width: 1
+                    border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                RowLayout {
-                    id: connRow
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: Theme.spacingM
-                    anchors.rightMargin: Theme.spacingM
-                    spacing: Theme.spacingM
+                    RowLayout {
+                        id: connRow
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: Theme.spacingM
+                        anchors.rightMargin: Theme.spacingM
+                        spacing: Theme.spacingM
 
-                    DankIcon {
-                        name: "dns"
-                        size: 20
-                        color: Theme.primary
-                    }
+                        Rectangle {
+                            width: 32
+                            height: 32
+                            radius: 16
+                            color: showConnectSwitch.checked ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15) : Qt.rgba(Theme.surfaceContainerHighest.r, Theme.surfaceContainerHighest.g, Theme.surfaceContainerHighest.b, 0.5)
+                            Layout.alignment: Qt.AlignVCenter
+                            Behavior on color { ColorAnimation { duration: 150 } }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        StyledText {
-                            text: "Show manual server list"
-                            font.pixelSize: Theme.fontSizeMedium
-                            font.weight: Font.Medium
-                            color: Theme.surfaceText
+                            DankIcon {
+                                name: "dns"
+                                size: 18
+                                color: showConnectSwitch.checked ? Theme.primary : Theme.surfaceVariantText
+                                anchors.centerIn: parent
+                                Behavior on color { ColorAnimation { duration: 150 } }
+                            }
                         }
 
-                        StyledText {
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            text: "Show or hide the countries and servers list for manual selection."
-                            font.pixelSize: Theme.fontSizeSmall
-                            color: Theme.surfaceVariantText
-                            wrapMode: Text.WordWrap
-                        }
-                    }
+                            spacing: 2
 
-                    DankToggle {
-                        id: showConnectSwitch
-                        hideText: true
-                        checked: root.showConnectContainer
-                        onToggled: function(newChecked) {
-                            checked = newChecked;
-                            root.showConnectContainer = newChecked;
-                            root.saveValue("showConnectContainer", newChecked);
+                            StyledText {
+                                text: "Show manual server list"
+                                font.pixelSize: Theme.fontSizeMedium
+                                font.weight: Font.Medium
+                                color: Theme.surfaceText
+                            }
+
+                            StyledText {
+                                Layout.fillWidth: true
+                                text: "Show or hide the countries and servers list for manual selection."
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: Theme.surfaceVariantText
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+
+                        DankToggle {
+                            id: showConnectSwitch
+                            hideText: true
+                            checked: root.showConnectContainer
+                            onToggled: function(newChecked) {
+                                checked = newChecked;
+                                root.showConnectContainer = newChecked;
+                                root.saveValue("showConnectContainer", newChecked);
+                            }
                         }
                     }
                 }
-            }
 
-            // 4. Show Speed Monitor (Middle)
-            Rectangle {
-                width: parent.width
-                height: speedRow.implicitHeight + Theme.spacingM * 2
-                readonly property bool isFirst: false
-                readonly property bool isLast: false
-                readonly property real outerR: Theme.cornerRadius
-                readonly property real innerR: 4
+                // 4. Show Speed Monitor (Middle)
+                Rectangle {
+                    width: parent.width
+                    height: speedRow.implicitHeight + Theme.spacingM * 2
 
-                topLeftRadius: isFirst ? outerR : innerR
-                topRightRadius: isFirst ? outerR : innerR
-                bottomLeftRadius: isLast ? outerR : innerR
-                bottomRightRadius: isLast ? outerR : innerR
+                    topLeftRadius: root.innerR
+                    topRightRadius: root.innerR
+                    bottomLeftRadius: root.innerR
+                    bottomRightRadius: root.innerR
 
-                color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
-                border.width: 1
-                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
+                    color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                    border.width: 1
+                    border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                RowLayout {
-                    id: speedRow
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: Theme.spacingM
-                    anchors.rightMargin: Theme.spacingM
-                    spacing: Theme.spacingM
+                    RowLayout {
+                        id: speedRow
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: Theme.spacingM
+                        anchors.rightMargin: Theme.spacingM
+                        spacing: Theme.spacingM
 
-                    DankIcon {
-                        name: "speed"
-                        size: 20
-                        color: Theme.primary
-                    }
+                        Rectangle {
+                            width: 32
+                            height: 32
+                            radius: 16
+                            color: showSpeedSwitch.checked ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15) : Qt.rgba(Theme.surfaceContainerHighest.r, Theme.surfaceContainerHighest.g, Theme.surfaceContainerHighest.b, 0.5)
+                            Layout.alignment: Qt.AlignVCenter
+                            Behavior on color { ColorAnimation { duration: 150 } }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        StyledText {
-                            text: "Show speed monitor"
-                            font.pixelSize: Theme.fontSizeMedium
-                            font.weight: Font.Medium
-                            color: Theme.surfaceText
+                            DankIcon {
+                                name: "speed"
+                                size: 18
+                                color: showSpeedSwitch.checked ? Theme.primary : Theme.surfaceVariantText
+                                anchors.centerIn: parent
+                                Behavior on color { ColorAnimation { duration: 150 } }
+                            }
                         }
 
-                        StyledText {
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            text: "Show or hide the real-time upload and download speed container."
-                            font.pixelSize: Theme.fontSizeSmall
-                            color: Theme.surfaceVariantText
-                            wrapMode: Text.WordWrap
-                        }
-                    }
+                            spacing: 2
 
-                    DankToggle {
-                        id: showSpeedSwitch
-                        hideText: true
-                        checked: root.showSpeedContainer
-                        onToggled: function(newChecked) {
-                            checked = newChecked;
-                            root.showSpeedContainer = newChecked;
-                            root.saveValue("showSpeedContainer", newChecked);
+                            StyledText {
+                                text: "Show speed monitor"
+                                font.pixelSize: Theme.fontSizeMedium
+                                font.weight: Font.Medium
+                                color: Theme.surfaceText
+                            }
+
+                            StyledText {
+                                Layout.fillWidth: true
+                                text: "Show or hide the real-time upload and download speed container."
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: Theme.surfaceVariantText
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+
+                        DankToggle {
+                            id: showSpeedSwitch
+                            hideText: true
+                            checked: root.showSpeedContainer
+                            onToggled: function(newChecked) {
+                                checked = newChecked;
+                                root.showSpeedContainer = newChecked;
+                                root.saveValue("showSpeedContainer", newChecked);
+                            }
                         }
                     }
                 }
-            }
 
-            // 5. Only Show Paid Servers (Last)
-            Rectangle {
-                width: parent.width
-                height: paidRow.implicitHeight + Theme.spacingM * 2
-                readonly property bool isFirst: false
-                readonly property bool isLast: true
-                readonly property real outerR: Theme.cornerRadius
-                readonly property real innerR: 4
+                // 5. Only Show Paid Servers (Last)
+                Rectangle {
+                    width: parent.width
+                    height: paidRow.implicitHeight + Theme.spacingM * 2
 
-                topLeftRadius: isFirst ? outerR : innerR
-                topRightRadius: isFirst ? outerR : innerR
-                bottomLeftRadius: isLast ? outerR : innerR
-                bottomRightRadius: isLast ? outerR : innerR
+                    topLeftRadius: root.innerR
+                    topRightRadius: root.innerR
+                    bottomLeftRadius: root.outerR
+                    bottomRightRadius: root.outerR
 
-                color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
-                border.width: 1
-                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
+                    color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                    border.width: 1
+                    border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                RowLayout {
-                    id: paidRow
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: Theme.spacingM
-                    anchors.rightMargin: Theme.spacingM
-                    spacing: Theme.spacingM
+                    RowLayout {
+                        id: paidRow
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: Theme.spacingM
+                        anchors.rightMargin: Theme.spacingM
+                        spacing: Theme.spacingM
 
-                    DankIcon {
-                        name: "monetization_on"
-                        size: 20
-                        color: Theme.primary
-                    }
+                        Rectangle {
+                            width: 32
+                            height: 32
+                            radius: 16
+                            color: paidServersSwitch.checked ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15) : Qt.rgba(Theme.surfaceContainerHighest.r, Theme.surfaceContainerHighest.g, Theme.surfaceContainerHighest.b, 0.5)
+                            Layout.alignment: Qt.AlignVCenter
+                            Behavior on color { ColorAnimation { duration: 150 } }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        StyledText {
-                            text: "Only show paid servers"
-                            font.pixelSize: Theme.fontSizeMedium
-                            font.weight: Font.Medium
-                            color: Theme.surfaceText
+                            DankIcon {
+                                name: "monetization_on"
+                                size: 18
+                                color: paidServersSwitch.checked ? Theme.primary : Theme.surfaceVariantText
+                                anchors.centerIn: parent
+                                Behavior on color { ColorAnimation { duration: 150 } }
+                            }
                         }
 
-                        StyledText {
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            text: "For Paid users only. If enabled, free servers will be hidden from the server selection list."
-                            font.pixelSize: Theme.fontSizeSmall
-                            color: Theme.error
-                            wrapMode: Text.WordWrap
-                        }
-                    }
+                            spacing: 2
 
-                    DankToggle {
-                        id: paidServersSwitch
-                        hideText: true
-                        checked: root.paidServersOnly
-                        onToggled: function(newChecked) {
-                            checked = newChecked;
-                            root.paidServersOnly = newChecked;
-                            root.saveValue("paidServersOnly", newChecked);
+                            StyledText {
+                                text: "Only show paid servers"
+                                font.pixelSize: Theme.fontSizeMedium
+                                font.weight: Font.Medium
+                                color: Theme.surfaceText
+                            }
+
+                            StyledText {
+                                Layout.fillWidth: true
+                                text: "For Paid users only. If enabled, free servers will be hidden from the server selection list."
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: Theme.error
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+
+                        DankToggle {
+                            id: paidServersSwitch
+                            hideText: true
+                            checked: root.paidServersOnly
+                            onToggled: function(newChecked) {
+                                checked = newChecked;
+                                root.paidServersOnly = newChecked;
+                                root.saveValue("paidServersOnly", newChecked);
+                            }
                         }
                     }
                 }
