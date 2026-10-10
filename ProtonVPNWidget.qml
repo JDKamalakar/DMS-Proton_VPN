@@ -22,7 +22,10 @@ PluginComponent {
     ccWidgetSecondaryText: root.connectionTypeLabel.startsWith("Error:") ? root.connectionTypeLabel : (root.isConnecting ? "Connecting..." : (root.isDisconnecting ? "Disconnecting..." : (root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : "Disconnected")))
     ccWidgetIsActive: root.vpnStatus === "Connected" || root.isConnecting || root.isDisconnecting
     ccDetailHeight: 480
-    onCcWidgetExpanded: root.refresh()
+    onCcWidgetExpanded: {
+        root.refresh();
+        root.fetchServers();
+    }
     onCcWidgetToggled: root.quickConnect()
     
     ccDetailContent: Component {
@@ -102,10 +105,10 @@ PluginComponent {
     property string _quickConnectCountry: PluginService.loadPluginData("protonVPN", "quickConnectCountry", "US")
     property string _quickConnectCustom: PluginService.loadPluginData("protonVPN", "quickConnectCustom", "")
 
-    PluginGlobalVar { varName: "defaultProtocol"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._defaultProtocol = val; } }
-    PluginGlobalVar { varName: "quickConnectType"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._quickConnectType = val; } }
-    PluginGlobalVar { varName: "quickConnectCountry"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._quickConnectCountry = val; } }
-    PluginGlobalVar { varName: "quickConnectCustom"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._quickConnectCustom = val; } }
+    PluginGlobalVar { id: gvDefaultProtocol; varName: "defaultProtocol"; onValueChanged: { if (gvDefaultProtocol.value !== undefined && gvDefaultProtocol.value !== null) root._defaultProtocol = gvDefaultProtocol.value; } }
+    PluginGlobalVar { id: gvQuickConnectType; varName: "quickConnectType"; onValueChanged: { if (gvQuickConnectType.value !== undefined && gvQuickConnectType.value !== null) root._quickConnectType = gvQuickConnectType.value; } }
+    PluginGlobalVar { id: gvQuickConnectCountry; varName: "quickConnectCountry"; onValueChanged: { if (gvQuickConnectCountry.value !== undefined && gvQuickConnectCountry.value !== null) root._quickConnectCountry = gvQuickConnectCountry.value; } }
+    PluginGlobalVar { id: gvQuickConnectCustom; varName: "quickConnectCustom"; onValueChanged: { if (gvQuickConnectCustom.value !== undefined && gvQuickConnectCustom.value !== null) root._quickConnectCustom = gvQuickConnectCustom.value; } }
 
     function quickConnect() {
         if (root.isConnecting || root.isDisconnecting || connectProc.running || disconnectProc.running) return;
@@ -320,17 +323,18 @@ PluginComponent {
     property bool _showSpeedContainer: PluginService.loadPluginData("protonVPN", "showSpeedContainer", true)
 
     PluginGlobalVar { 
+        id: gvPaidServersOnly
         varName: "paidServersOnly"
-        onValueChanged: function(val) { 
-            if (val !== undefined && val !== null) {
-                root._paidServersOnly = val; 
+        onValueChanged: { 
+            if (gvPaidServersOnly.value !== undefined && gvPaidServersOnly.value !== null) {
+                root._paidServersOnly = gvPaidServersOnly.value; 
                 root._lastServersJson = "";
                 root.fetchServers();
             }
         } 
     }
-    PluginGlobalVar { varName: "showConnectContainer"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._showConnectContainer = val; } }
-    PluginGlobalVar { varName: "showSpeedContainer"; onValueChanged: function(val) { if (val !== undefined && val !== null) root._showSpeedContainer = val; } }
+    PluginGlobalVar { id: gvShowConnectContainer; varName: "showConnectContainer"; onValueChanged: { if (gvShowConnectContainer.value !== undefined && gvShowConnectContainer.value !== null) root._showConnectContainer = gvShowConnectContainer.value; } }
+    PluginGlobalVar { id: gvShowSpeedContainer; varName: "showSpeedContainer"; onValueChanged: { if (gvShowSpeedContainer.value !== undefined && gvShowSpeedContainer.value !== null) root._showSpeedContainer = gvShowSpeedContainer.value; } }
 
     Process {
         id: serversScanner
@@ -463,11 +467,11 @@ PluginComponent {
 
     Timer {
         id: statusTimer
-        interval: (root.isConnecting || root.isDisconnecting) ? 1000 : 3000
+        interval: (root.isConnecting || root.isDisconnecting) ? 1000 : (root.popoutOpen ? 3000 : 10000)
         running: true; repeat: true; triggeredOnStart: true
         onTriggered: {
             root.refresh();
-            if (root.vpnStatus === "Disconnected" || root.popoutOpen) {
+            if (root.popoutOpen) {
                 root.fetchServers();
             }
         }
@@ -483,11 +487,11 @@ PluginComponent {
         connectTimeoutTimer.restart();
         
         let proto = root._defaultProtocol || "smart";
-        let cmd = "timeout 15 pvpnctl connect \"" + tgt + "\"";
         if (proto !== "smart") {
-            cmd += " --protocol " + proto;
+            connectProc.command = ["timeout", "15", "pvpnctl", "connect", tgt, "--protocol", proto];
+        } else {
+            connectProc.command = ["timeout", "15", "pvpnctl", "connect", tgt];
         }
-        connectProc.command = ["bash", "-c", cmd];
         connectProc.running = true;
         statusTimer.restart();
     }
@@ -500,7 +504,7 @@ PluginComponent {
         root.connectionTypeLabel = "Disconnecting...";
         connectTimeoutTimer.restart();
         
-        disconnectProc.command = ["bash", "-c", "timeout 10 pvpnctl disconnect"];
+        disconnectProc.command = ["timeout", "10", "pvpnctl", "disconnect"];
         disconnectProc.running = true;
         statusTimer.restart();
     }
@@ -517,11 +521,12 @@ PluginComponent {
         connectTimeoutTimer.restart();
         
         let proto = root._defaultProtocol || "smart";
-        let cmd = "pvpnctl disconnect 2>/dev/null; sleep 0.5; pvpnctl connect \"" + target + "\"";
-        if (proto !== "smart") {
-            cmd += " --protocol " + proto;
-        }
-        connectProc.command = ["timeout", "15", "bash", "-c", cmd];
+        let connectCmd = (proto !== "smart")
+            ? ["pvpnctl", "connect", target, "--protocol", proto]
+            : ["pvpnctl", "connect", target];
+        
+        // Execute clean disconnect then connect safely
+        connectProc.command = ["timeout", "15", "bash", "-c", "pvpnctl disconnect 2>/dev/null; sleep 0.5; \"$@\"", "_", ...connectCmd];
         connectProc.running = true;
         statusTimer.restart();
     }
@@ -560,7 +565,7 @@ PluginComponent {
                     id: pillTextH
                     text: root.connectionTypeLabel.startsWith("Error:") ? root.connectionTypeLabel : (root.isConnecting ? "Connecting..." : (root.isDisconnecting ? "Disconnecting..." : (root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : "Disconnected")))
                     font.pixelSize: Theme.fontSizeSmall - 1; font.weight: Font.Medium
-                    color: root.vpnStatus === "Connected" ? Theme.primary : (root.connectionTypeLabel.startsWith("Error:") ? "#ff5555" : (Theme.widgetTextColor || Theme.surfaceText))
+                    color: root.vpnStatus === "Connected" ? Theme.primary : (root.connectionTypeLabel.startsWith("Error:") ? Theme.error : (Theme.widgetTextColor || Theme.surfaceText))
                     anchors.verticalCenter: parent.verticalCenter
                 }
             }
@@ -605,7 +610,7 @@ PluginComponent {
                 StyledText {
                     id: pillTextV
                     text: root.isConnecting || root.isDisconnecting ? "..." : (root.vpnStatus === "Connected" ? root.getShortServerName(root.connectedServer) : "...")
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fontSizeSmall - 3
                     font.weight: Font.Bold
                     color: root.vpnStatus === "Connected" ? Theme.primary : (Theme.widgetTextColor || Theme.surfaceText)
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -673,7 +678,7 @@ PluginComponent {
                             }
                             Text {
                                 text: (root.vpnStatus === "Connected" && root.connectedCountry) ? root.getCountryFlag(root.connectedCountry) : ""
-                                font.pixelSize: 22
+                                font.pixelSize: Theme.fontSizeLarge + 4
                                 font.family: "Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, EmojiOne Color, Twemoji, sans-serif"
                                 color: Theme.surfaceText
                                 anchors.centerIn: parent
@@ -701,7 +706,7 @@ PluginComponent {
                                         ? "Disconnecting..." 
                                         : (root.vpnStatus === "Connected" ? (root.connectedCountryName || root.connectedServer || "Connected") : "Disconnected")))
                             font.pixelSize: Theme.fontSizeSmall - 1
-                            color: (root.vpnStatus === "Connected" || root.isConnecting) ? Theme.primary : (root.connectionTypeLabel.startsWith("Error:") ? "#ff5555" : Theme.surfaceVariantText)
+                            color: (root.vpnStatus === "Connected" || root.isConnecting) ? Theme.primary : (root.connectionTypeLabel.startsWith("Error:") ? Theme.error : Theme.surfaceVariantText)
                             font.family: "Monospace"
                             opacity: 0.8
                             verticalAlignment: Text.AlignVCenter
@@ -1194,7 +1199,7 @@ PluginComponent {
 
                         RowLayout {
                             anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: Theme.spacingS
-                            DankIcon { name: "bolt"; size: 18; color: Theme.isDarkMode ? "#ffffff" : "#000000"; Layout.alignment: Qt.AlignVCenter }
+                            DankIcon { name: "bolt"; size: 18; color: Theme.surfaceText; Layout.alignment: Qt.AlignVCenter }
                             StyledText { 
                                 text: {
                                     let t = PluginService.loadPluginData("protonVPN", "quickConnectType", root._quickConnectType || "fastest");
@@ -1336,7 +1341,7 @@ PluginComponent {
                                                     Layout.alignment: Qt.AlignVCenter
                                                     Text {
                                                         text: modelData.flag
-                                                        font.pixelSize: 20
+                                                        font.pixelSize: Theme.fontSizeLarge + 2
                                                         font.family: "Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, EmojiOne Color, Twemoji, sans-serif"
                                                         anchors.left: parent.left
                                                         anchors.verticalCenter: parent.verticalCenter
