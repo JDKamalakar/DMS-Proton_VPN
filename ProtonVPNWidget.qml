@@ -58,6 +58,12 @@ PluginComponent {
     property string connectedCountry: ""
     property string downloadSpeed: "0 B/s"
     property string uploadSpeed: "0 B/s"
+    property bool isBackendInstalled: true
+    property bool isLoggedIn: true
+    property string accountUsername: ""
+    property bool hasBackendUpdate: false
+    property string installedVersion: ""
+    property string latestVersion: ""
 
     function getShortServerName(srv) {
         if (!srv || srv === "Connected") return "VPN";
@@ -171,6 +177,27 @@ PluginComponent {
     }
 
     // --- Scanners & Process Execution ---
+    Process {
+        id: widgetBackendChecker
+        command: ["bash", "-c", "python3 /home/JD/Downloads/Projects/DMS-Proton_VPN/check_backend.py 2>/dev/null || echo '{}'"]
+        running: true
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    let raw = (text || "").trim();
+                    if (!raw) return;
+                    let data = JSON.parse(raw);
+                    root.isBackendInstalled = Boolean(data.pvpn || data.pvpnctl || data.pvpnd);
+                    root.isLoggedIn = Boolean(data.logged_in);
+                    root.accountUsername = data.username || "";
+                    root.hasBackendUpdate = Boolean(data.has_update);
+                    root.installedVersion = data.installed_version || "";
+                    root.latestVersion = data.latest_version || "";
+                } catch(e) {}
+            }
+        }
+    }
+
     Process {
         id: statusScanner
         command: ["bash", "-c", "timeout 2 pvpnctl status --format waybar 2>/dev/null || echo '{\"class\":\"disconnected\"}'; echo '---'; timeout 2 pvpnctl status 2>/dev/null || echo 'Disconnected'"]
@@ -456,6 +483,9 @@ PluginComponent {
         if (!statusScanner.running) {
             statusScanner.running = true;
         }
+        if (typeof widgetBackendChecker !== "undefined" && widgetBackendChecker && !widgetBackendChecker.running) {
+            widgetBackendChecker.running = true;
+        }
     }
 
     function fetchServers() {
@@ -563,9 +593,13 @@ PluginComponent {
                 height: 20; Layout.fillWidth: false; Layout.preferredWidth: Math.max(pillTextH.implicitWidth, 60); Layout.alignment: Qt.AlignVCenter
                 StyledText { 
                     id: pillTextH
-                    text: root.connectionTypeLabel.startsWith("Error:") ? root.connectionTypeLabel : (root.isConnecting ? "Connecting..." : (root.isDisconnecting ? "Disconnecting..." : (root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : "Disconnected")))
+                    text: !root.isBackendInstalled
+                        ? "Backend Missing"
+                        : (!root.isLoggedIn 
+                            ? "Not Logged In" 
+                            : (root.connectionTypeLabel.startsWith("Error:") ? root.connectionTypeLabel : (root.isConnecting ? "Connecting..." : (root.isDisconnecting ? "Disconnecting..." : (root.vpnStatus === "Connected" ? (root.connectedServer || "Connected") : (root.hasBackendUpdate ? "Update Available" : "Disconnected"))))))
                     font.pixelSize: Theme.fontSizeSmall - 1; font.weight: Font.Medium
-                    color: root.vpnStatus === "Connected" ? Theme.primary : (root.connectionTypeLabel.startsWith("Error:") ? Theme.error : (Theme.widgetTextColor || Theme.surfaceText))
+                    color: !root.isLoggedIn ? Theme.error : (root.hasBackendUpdate && root.vpnStatus !== "Connected" ? Theme.primary : (root.vpnStatus === "Connected" ? Theme.primary : (root.connectionTypeLabel.startsWith("Error:") ? Theme.error : (Theme.widgetTextColor || Theme.surfaceText))))
                     anchors.verticalCenter: parent.verticalCenter
                 }
             }
@@ -698,15 +732,19 @@ PluginComponent {
                         StyledText { 
                             id: statusLabelText
                             Layout.fillWidth: true
-                            text: root.connectionTypeLabel.startsWith("Error:") 
-                                ? root.connectionTypeLabel 
-                                : (root.isConnecting 
-                                    ? (root.connectionTypeLabel.startsWith("Reconnecting") || root.connectionTypeLabel.startsWith("Connecting") ? root.connectionTypeLabel : "Connecting...") 
-                                    : (root.isDisconnecting 
-                                        ? "Disconnecting..." 
-                                        : (root.vpnStatus === "Connected" ? (root.connectedCountryName || root.connectedServer || "Connected") : "Disconnected")))
+                            text: !root.isBackendInstalled
+                                ? "Backend Not Installed"
+                                : (!root.isLoggedIn
+                                    ? "Not Logged In"
+                                    : (root.connectionTypeLabel.startsWith("Error:") 
+                                    ? root.connectionTypeLabel 
+                                    : (root.isConnecting 
+                                        ? (root.connectionTypeLabel.startsWith("Reconnecting") || root.connectionTypeLabel.startsWith("Connecting") ? root.connectionTypeLabel : "Connecting...") 
+                                        : (root.isDisconnecting 
+                                            ? "Disconnecting..." 
+                                            : (root.vpnStatus === "Connected" ? (root.connectedCountryName || root.connectedServer || "Connected") : "Disconnected")))))
                             font.pixelSize: Theme.fontSizeSmall - 1
-                            color: (root.vpnStatus === "Connected" || root.isConnecting) ? Theme.primary : (root.connectionTypeLabel.startsWith("Error:") ? Theme.error : Theme.surfaceVariantText)
+                            color: !root.isLoggedIn ? Theme.error : ((root.vpnStatus === "Connected" || root.isConnecting) ? Theme.primary : (root.connectionTypeLabel.startsWith("Error:") ? Theme.error : Theme.surfaceVariantText))
                             font.family: "Monospace"
                             opacity: 0.8
                             verticalAlignment: Text.AlignVCenter
@@ -871,6 +909,159 @@ PluginComponent {
                                 onPressed: mouse => reconnectBtnRipple.trigger(mouse.x, mouse.y)
                                 onClicked: root.reconnectVpn()
                             }
+                        }
+                    }
+                }
+            }
+
+            // --- Backend Missing Alert Banner ---
+            StyledRect {
+                width: Math.max(0, parent.width - (mainCol.inCC ? 32 : 0))
+                anchors.horizontalCenter: parent.horizontalCenter
+                height: backendMissingRow.implicitHeight + Theme.spacingM * 2
+                radius: Theme.cornerRadius
+                visible: !root.isBackendInstalled
+                color: Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, 0.12)
+                border.width: 1
+                border.color: Theme.error
+
+                RowLayout {
+                    id: backendMissingRow
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.spacingM
+                    anchors.rightMargin: Theme.spacingM
+                    spacing: Theme.spacingM
+
+                    DankIcon {
+                        name: "warning"
+                        size: 22
+                        color: Theme.error
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        StyledText {
+                            text: "pVPN Backend Not Installed"
+                            font.bold: true
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.error
+                        }
+
+                        StyledText {
+                            Layout.fillWidth: true
+                            text: "Backend packages (pvpn, pvpnctl, pvpnd) are not installed. Please open Settings to install."
+                            font.pixelSize: Theme.fontSizeSmall - 1
+                            color: Theme.surfaceText
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+            }
+
+            // --- Update Available Alert Banner ---
+            StyledRect {
+                width: Math.max(0, parent.width - (mainCol.inCC ? 32 : 0))
+                anchors.horizontalCenter: parent.horizontalCenter
+                height: updateBannerRow.implicitHeight + Theme.spacingS * 2
+                radius: Theme.cornerRadius
+                visible: root.isBackendInstalled && root.hasBackendUpdate
+                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                border.width: 1
+                border.color: Theme.primary
+
+                RowLayout {
+                    id: updateBannerRow
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.spacingM
+                    anchors.rightMargin: Theme.spacingM
+                    spacing: Theme.spacingS
+
+                    DankIcon {
+                        name: "system_update"
+                        size: 20
+                        color: Theme.primary
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 1
+
+                        StyledText {
+                            text: "Update Available (" + (root.installedVersion || "old") + " → " + root.latestVersion + ")"
+                            font.bold: true
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.primary
+                        }
+
+                        StyledText {
+                            text: "Open Settings to update the pVPN backend."
+                            font.pixelSize: Theme.fontSizeSmall - 2
+                            color: Theme.surfaceText
+                        }
+                    }
+
+                    DankButton {
+                        text: "Update"
+                        iconName: "arrow_forward"
+                        buttonHeight: 28
+                        backgroundColor: Theme.primary
+                        textColor: Theme.surfaceContainerHighest
+                        Layout.alignment: Qt.AlignVCenter
+                        onClicked: {
+                            if (typeof PluginService !== "undefined" && PluginService && PluginService.openPluginSettings) {
+                                PluginService.openPluginSettings("protonVPN");
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- Not Logged In Alert Banner (Only when backend is installed) ---
+            StyledRect {
+                width: Math.max(0, parent.width - (mainCol.inCC ? 32 : 0))
+                anchors.horizontalCenter: parent.horizontalCenter
+                height: notLoggedInRow.implicitHeight + Theme.spacingM * 2
+                radius: Theme.cornerRadius
+                visible: root.isBackendInstalled && !root.isLoggedIn
+                color: Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, 0.12)
+                border.width: 1
+                border.color: Theme.error
+
+                RowLayout {
+                    id: notLoggedInRow
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.spacingM
+                    anchors.rightMargin: Theme.spacingM
+                    spacing: Theme.spacingM
+
+                    DankIcon {
+                        name: "no_accounts"
+                        size: 22
+                        color: Theme.error
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        StyledText {
+                            text: "Not Logged In"
+                            font.bold: true
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.error
+                        }
+
+                        StyledText {
+                            Layout.fillWidth: true
+                            text: "Please sign in from Settings or via TUI (run 'pvpn' in terminal) to connect to Proton VPN servers."
+                            font.pixelSize: Theme.fontSizeSmall - 1
+                            color: Theme.surfaceText
+                            wrapMode: Text.WordWrap
                         }
                     }
                 }
