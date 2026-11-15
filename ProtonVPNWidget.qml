@@ -176,10 +176,17 @@ PluginComponent {
         return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
     }
 
+    readonly property string _pluginDirPath: {
+        let u = String(Qt.resolvedUrl(".") || "");
+        if (u.startsWith("file://")) u = u.slice(7);
+        if (u.endsWith("/")) u = u.slice(0, -1);
+        return u;
+    }
+
     // --- Scanners & Process Execution ---
     Process {
         id: widgetBackendChecker
-        command: ["bash", "-c", "python3 /home/JD/Downloads/Projects/DMS-Proton_VPN/check_backend.py 2>/dev/null || echo '{}'"]
+        command: ["bash", "-c", "python3 '" + root._pluginDirPath + "/check_backend.py' 2>/dev/null || echo '{}'"]
         running: true
         stdout: StdioCollector {
             onStreamFinished: {

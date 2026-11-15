@@ -115,6 +115,13 @@ PluginSettings {
     readonly property real outerR: Theme.cornerRadius || 12
     readonly property real innerR: 4
 
+    readonly property string _pluginDirPath: {
+        let u = String(Qt.resolvedUrl(".") || "");
+        if (u.startsWith("file://")) u = u.slice(7);
+        if (u.endsWith("/")) u = u.slice(0, -1);
+        return u;
+    }
+
     function loadValue(key, def) {
         if (typeof PluginService !== "undefined" && PluginService && PluginService.loadPluginData) {
             return PluginService.loadPluginData(root.pluginId, key, def);
@@ -735,7 +742,7 @@ PluginSettings {
 
             Process {
                 id: depChecker
-                command: ["bash", "-c", "python3 /home/JD/Downloads/Projects/DMS-Proton_VPN/check_backend.py 2>/dev/null || echo '{}'"]
+                command: ["bash", "-c", "python3 '" + root._pluginDirPath + "/check_backend.py' 2>/dev/null || echo '{}'"]
                 stdout: StdioCollector {
                     onStreamFinished: {
                         depsWrapper.isChecking = false;
@@ -790,7 +797,7 @@ PluginSettings {
 
             Process {
                 id: installProc
-                command: ["pkexec", "/home/JD/Downloads/Projects/DMS-Proton_VPN/install_backend_headless.sh"]
+                command: ["pkexec", root._pluginDirPath + "/install_backend_headless.sh"]
                 stdout: StdioCollector {
                     onStreamFinished: {
                         depsWrapper.isInstalling = false;
@@ -802,7 +809,7 @@ PluginSettings {
 
             Process {
                 id: uninstallProc
-                command: ["bash", "/home/JD/Downloads/Projects/DMS-Proton_VPN/launch_uninstaller.sh"]
+                command: ["bash", root._pluginDirPath + "/launch_uninstaller.sh"]
             }
 
             function launchUninstallTerminal() {
@@ -839,7 +846,7 @@ PluginSettings {
                 authError = "";
                 authSuccess = "";
                 isLoggingOut = true;
-                logoutProc.command = ["python3", "/home/JD/Downloads/Projects/DMS-Proton_VPN/pvpn_logout.py"];
+                logoutProc.command = ["python3", root._pluginDirPath + "/pvpn_logout.py"];
                 logoutProc.running = false;
                 logoutProc.running = true;
             }

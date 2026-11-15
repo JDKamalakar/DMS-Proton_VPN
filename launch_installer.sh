@@ -1,5 +1,6 @@
 #!/bin/bash
-SCRIPT="/home/JD/Downloads/Projects/DMS-Proton_VPN/install_backend.sh"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+SCRIPT="${DIR}/install_backend.sh"
 for term in kitty foot konsole gnome-terminal alacritty wezterm xterm; do
     if command -v "$term" >/dev/null 2>&1; then
         if [ "$term" = "gnome-terminal" ]; then
