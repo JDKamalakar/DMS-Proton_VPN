@@ -1,4 +1,4 @@
-import json, shutil, subprocess, urllib.request, socket
+import json, shutil, subprocess, urllib.request, socket, re
 
 status = {
     "pvpn": bool(shutil.which("pvpn")),
@@ -11,6 +11,7 @@ status = {
     "installed_version": "",
     "latest_version": "",
     "has_update": False,
+    "api_unsupported": False,
     "logged_in": False,
     "username": "",
     "plan_name": "",
@@ -23,17 +24,70 @@ try:
 except Exception:
     pass
 
+def fetch_latest_release():
+    # 1. Try GitHub releases redirect (no API token / 60 req rate limit)
+    try:
+        req = urllib.request.Request("https://github.com/YourDoritos/pVPN/releases/latest", headers={"User-Agent": "Mozilla/5.0"})
+        opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler)
+        with opener.open(req, timeout=4) as resp:
+            m = re.search(r'/tag/([^/]+)', resp.geturl())
+            if m:
+                return m.group(1).strip()
+    except Exception:
+        pass
+
+    # 2. Try Atom feed
+    try:
+        req = urllib.request.Request("https://github.com/YourDoritos/pVPN/releases.atom", headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            xml = resp.read().decode("utf-8")
+            m = re.search(r'/releases/tag/([^"\'\s<>]+)', xml)
+            if m:
+                return m.group(1).strip()
+    except Exception:
+        pass
+
+    # 3. Fallback to API if not rate-limited
+    try:
+        req = urllib.request.Request("https://api.github.com/repos/YourDoritos/pVPN/releases/latest", headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            d = json.loads(resp.read().decode())
+            return (d.get("tag_name") or "").strip()
+    except Exception:
+        pass
+
+    return ""
+
 try:
-    req = urllib.request.Request("https://api.github.com/repos/YourDoritos/pVPN/releases/latest", headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=4) as resp:
-        d = json.loads(resp.read().decode())
-        tag = (d.get("tag_name") or "").strip()
-        status["latest_version"] = tag
-        if tag and status["installed_version"]:
-            def parse_v(v):
-                v = v.lstrip("v")
-                return [int(x) for x in v.split(".") if x.isdigit()]
-            status["has_update"] = (parse_v(tag) > parse_v(status["installed_version"]))
+    tag = fetch_latest_release()
+    status["latest_version"] = tag
+    if tag and status["installed_version"]:
+        def parse_v(v):
+            v = v.lstrip("v")
+            return [int(x) for x in v.split(".") if x.isdigit()]
+        status["has_update"] = (parse_v(tag) > parse_v(status["installed_version"]))
+except Exception:
+    pass
+
+# Check if daemon has the API version override or if it gets 5003
+try:
+    env_out = subprocess.check_output(["systemctl", "show", "pvpnd", "-p", "Environment", "--no-pager"], stderr=subprocess.DEVNULL).decode()
+    if "PVPN_APPVERSION" not in env_out:
+        # Check if the unoverridden version 4.19.0 gets 5003 error
+        probe_req = urllib.request.Request("https://vpn-api.proton.me/vpn/v2", headers={
+            "User-Agent": "ProtonVPN/4.19.0 (Linux; go-pvpn)",
+            "x-pm-appversion": "linux-vpn@4.19.0",
+            "Content-Type": "application/json"
+        })
+        try:
+            with urllib.request.urlopen(probe_req, timeout=3) as _:
+                pass
+        except urllib.error.HTTPError as e:
+            if e.code == 422:
+                body = e.read().decode("utf-8", errors="ignore")
+                if "5003" in body:
+                    status["api_unsupported"] = True
+                    status["has_update"] = True
 except Exception:
     pass
 
